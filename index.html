@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>順路帳ビューア（縦書き）</title>
+<style>
+  :root {
+    --top-bar-height: 48px;
+  }
+  body {
+    margin: 0;
+    background: #f2f2f2;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    overflow: hidden;
+  }
+  /* 上部バー（CSV選択用） */
+  #top-bar {
+    height: var(--top-bar-height);
+    display: flex;
+    align-items: center;
+    padding: 4px 8px;
+    box-sizing: border-box;
+    background: #333;
+    color: #fff;
+    font-size: 14px;
+  }
+  #top-bar label {
+    display: inline-block;
+    padding: 6px 10px;
+    border-radius: 6px;
+    background: #fff;
+    color: #333;
+    font-weight: bold;
+    margin-right: 8px;
+    cursor: pointer;
+  }
+  #csvFile {
+    display: none;
+  }
+  #status {
+    font-size: 12px;
+    opacity: .8;
+  }
+
+  /* カードの入る横スクロール部分 */
+  #container {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    height: calc(100vh - var(--top-bar-height));
+    white-space: nowrap;
+  }
+
+  /* 1ページ＝5件分のかたまり */
+  .group {
+    display: flex;
+    flex-direction: row;
+    flex: 0 0 100vw;      /* 画面幅ちょうど */
+    scroll-snap-align: start;
+    padding: 6px;
+    box-sizing: border-box;
+  }
+
+  /* 1件ぶんのカード */
+  .card {
+    background: #ffffff;
+    margin: 4px;
+    flex: 1;
+    border-radius: 14px;
+    padding: 6px;
+    box-sizing: border-box;
+    border: solid 2px #444;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  /* 縦書きテキスト */
+  .card-text {
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    font-size: 2rem;              /* 文字大きめ */
+    font-weight: bold;
+    line-height: 1.2;
+    text-align: center;
+    word-break: break-all;
+  }
+
+  /* スクロールバーを目立たなく */
+  #container::-webkit-scrollbar {
+    height: 4px;
+  }
+  #container::-webkit-scrollbar-thumb {
+    background: #999;
+    border-radius: 2px;
+  }
+</style>
+</head>
+<body>
+
+<div id="top-bar">
+  <label for="csvFile">CSVを選択</label>
+  <input id="csvFile" type="file" accept=".csv">
+  <div id="status">横向き推奨／1ページ5件表示</div>
+</div>
+
+<div id="container"></div>
+
+<script>
+// ▼ デフォルトのダミーデータ（CSVを選ぶ前に表示される） ▼
+let data = [
+  "101 山田",
+  "102 佐藤",
+  "103 鈴木",
+  "104 高橋",
+  "105 伊藤",
+  "106 渡辺",
+  "107 小林",
+  "108 加藤",
+  "109 吉田",
+  "110 山本",
+  "111 中村",
+  "112 木村"
+];
+// ▲ ここはそのままでOK（CSVを読み込むと上書きされます） ▲
+
+
+// ---- CSV 読み込み ----
+const fileInput = document.getElementById("csvFile");
+const statusEl  = document.getElementById("status");
+const container = document.getElementById("container");
+
+fileInput.addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    const text = ev.target.result;
+    const parsed = parseCsvToTextArray(text);
+    if (parsed.length === 0) {
+      alert("有効なデータがありませんでした。CSVの内容を確認してください。");
+      return;
+    }
+    data = parsed;
+    statusEl.textContent = `${file.name} を読み込みました（${data.length}件）`;
+    render();
+  };
+  reader.readAsText(file, "UTF-8");
+});
+
+/**
+ * CSV文字列 → 表示用テキストの配列に変換
+ * ルール：
+ *   - 1行1件
+ *   - カンマがある場合：2列目を表示（なければ1列目）
+ *   - 先頭行が「順番,表示名」などのヘッダーっぽい場合は自動スキップ
+ */
+function parseCsvToTextArray(csvText) {
+  const lines = csvText.split(/\r?\n/).map(l => l.trim()).filter(l => l);
+  const result = [];
+
+  lines.forEach((line, idx) => {
+    const cols = line.split(",");
+    const joined = cols.join("");
+
+    // 1行目がヘッダーっぽければスキップ
+    if (
+      idx === 0 &&
+      /順|番|order|Order|表示|name|Name/i.test(joined)
+    ) {
+      return;
+    }
+
+    let value = "";
+    if (cols.length >= 2) {
+      value = cols[1].trim() || cols[0].trim();
+    } else {
+      value = cols[0].trim();
+    }
+
+    if (value) {
+      result.push(value);
+    }
+  });
+
+  return result;
+}
+
+// ---- 5件ずつ分割 ----
+function chunk(array, size) {
+  const result = [];
+  for (let i = 0; i < array.length; i += size) {
+    result.push(array.slice(i, i + size));
+  }
+  return result;
+}
+
+// ---- 画面に描画 ----
+function render() {
+  container.innerHTML = "";
+  const groups = chunk(data, 5);
+
+  groups.forEach(groupData => {
+    const group = document.createElement("div");
+    group.className = "group";
+
+    groupData.forEach(item => {
+      const card = document.createElement("div");
+      card.className = "card";
+
+      const span = document.createElement("div");
+      span.className = "card-text";
+      span.textContent = item;
+
+      card.appendChild(span);
+      group.appendChild(card);
+    });
+
+    // 5件に満たない分は空カードで埋めて幅を合わせる
+    for (let i = groupData.length; i < 5; i++) {
+      const empty = document.createElement("div");
+      empty.className = "card";
+      empty.style.visibility = "hidden";
+      group.appendChild(empty);
+    }
+
+    container.appendChild(group);
+  });
+}
+
+// 初期表示
+render();
+</script>
+</body>
+</html>
