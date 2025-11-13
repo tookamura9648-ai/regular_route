@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-<title>順路帳＋地図（縦書き）</title>
+<title>順路帳＋地図（縦書き・住所3分割版）</title>
 
 <!-- Leaflet（地図ライブラリ） -->
 <link
@@ -63,7 +63,7 @@
     white-space: nowrap;
   }
 
-  /* 1ページ＝5件 */
+  /* 1ページ＝5件分 */
   .group {
     display: flex;
     flex-direction: row;
@@ -83,21 +83,54 @@
     box-sizing: border-box;
     border: solid 2px #444;
     display: flex;
-    justify-content: center;
-    align-items: center;
+    flex-direction: column;
+    align-items: stretch;
     cursor: pointer;
     touch-action: manipulation;
   }
 
-  /* 縦書き */
-  .card-text {
+  /* 上部：購読者番号 & 新聞種類（横書き2行） */
+  .card-top {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    font-size: 1.1rem;
+    line-height: 1.2;
+    margin-bottom: 4px;
+  }
+  .card-no {
+    font-weight: bold;
+  }
+  .card-type {
+    font-size: 0.95rem;
+    opacity: 0.9;
+  }
+
+  /* 下部：名前＋住所（縦書き） */
+  .card-main {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    gap: 4px;
+    overflow: hidden;
+  }
+
+  .vertical-text {
     writing-mode: vertical-rl;
     text-orientation: mixed;
-    font-size: 2rem;
-    font-weight: bold;
-    line-height: 1.2;
-    text-align: center;
+    white-space: pre-line;
     word-break: break-all;
+  }
+
+  .name-text {
+    font-size: 1.8rem;
+    font-weight: bold;
+  }
+
+  /* 住所3分割は名前より少し小さめ */
+  .addr-text {
+    font-size: 1.2rem;
+    opacity: 0.9;
   }
 
   #container::-webkit-scrollbar {
@@ -183,19 +216,31 @@
 
 <script>
 // ===== データ構造 =====
-// { label: "101 山田", lat: 35.0, lng: 135.0 } の配列
+// { no, type, name, addr1, addr2, addr3, lat, lng, area }
 let entries = [
-  // デフォルトのダミーデータ（CSV読み込みで上書きされます）
-  { label: "101 山田", lat: 35.12345, lng: 135.12345 },
-  { label: "102 佐藤", lat: 35.23456, lng: 135.23456 },
-  { label: "103 鈴木", lat: 35.34567, lng: 135.34567 },
-  { label: "104 高橋", lat: null, lng: null },
-  { label: "105 伊藤", lat: null, lng: null },
-  { label: "106 渡辺", lat: null, lng: null },
-  { label: "107 小林", lat: null, lng: null },
-  { label: "108 加藤", lat: null, lng: null },
-  { label: "109 吉田", lat: null, lng: null },
-  { label: "110 山本", lat: null, lng: null }
+  // ダミーデータ（CSV読み込みで上書きされます）
+  {
+    no: "A001",
+    type: "朝刊",
+    name: "山田太郎",
+    addr1: "滋賀県草津市◯◯",
+    addr2: "1-2-3",
+    addr3: "",
+    lat: null,
+    lng: null,
+    area: "南部"
+  },
+  {
+    no: "A002",
+    type: "朝夕刊",
+    name: "佐藤花子",
+    addr1: "滋賀県草津市△△",
+    addr2: "5-6-7",
+    addr3: "ハイツ101",
+    lat: null,
+    lng: null,
+    area: "南部"
+  }
 ];
 
 const fileInput = document.getElementById("csvFile");
@@ -223,10 +268,10 @@ fileInput.addEventListener("change", (e) => {
 });
 
 /**
- * CSV文字列 → {label,lat,lng}[] に変換
+ * CSV文字列 → {no,type,name,addr1,addr2,addr3,lat,lng,area}[] に変換
  * 想定フォーマット：
- *   表示名,緯度,経度
- * 先頭行に「表示」「name」「緯度」「lat」などがあればヘッダーとしてスキップ
+ *   購読者番号,新聞種類,名前,地名,番地,建物,緯度,経度,区域
+ * 先頭行にヘッダーらしき語が入っていればスキップ
  */
 function parseCsvToEntries(csvText) {
   const lines = csvText.split(/\r?\n/).map(l => l.trim()).filter(l => l);
@@ -239,29 +284,36 @@ function parseCsvToEntries(csvText) {
     // ヘッダー判定（1行目だけ）
     if (
       idx === 0 &&
-      /表示|name|Name|緯度|経度|lat|lng|Lon|long/i.test(joined)
+      /購読|番号|新聞|種類|名前|氏名|地名|番地|建物|住所|緯度|経度|区域|area/i.test(joined)
     ) {
       return;
     }
 
     if (cols.length === 0) return;
 
-    const label = (cols[0] || "").trim();
-    if (!label) return;
+    const no    = (cols[0] || "").trim();
+    const type  = (cols[1] || "").trim();
+    const name  = (cols[2] || "").trim();
+    const addr1 = (cols[3] || "").trim(); // 地名
+    const addr2 = (cols[4] || "").trim(); // 番地
+    const addr3 = (cols[5] || "").trim(); // 建物
+
+    if (!no && !name) return;  // どちらも空ならスキップ
 
     let lat = null;
     let lng = null;
-
-    if (cols.length >= 3) {
-      const latNum = Number(cols[1].trim());
-      const lngNum = Number(cols[2].trim());
+    if (cols.length >= 8) {
+      const latNum = Number((cols[6] || "").trim());
+      const lngNum = Number((cols[7] || "").trim());
       if (!Number.isNaN(latNum) && !Number.isNaN(lngNum)) {
         lat = latNum;
         lng = lngNum;
       }
     }
 
-    result.push({ label, lat, lng });
+    const area = (cols[8] || "").trim();
+
+    result.push({ no, type, name, addr1, addr2, addr3, lat, lng, area });
   });
 
   return result;
@@ -289,22 +341,68 @@ function renderCards() {
       const card = document.createElement("div");
       card.className = "card";
 
-      // 緯度経度をデータ属性に
-      card.dataset.label = item.label;
+      // データ属性に格納（地図用）
+      card.dataset.no    = item.no || "";
+      card.dataset.type  = item.type || "";
+      card.dataset.name  = item.name || "";
+      card.dataset.addr1 = item.addr1 || "";
+      card.dataset.addr2 = item.addr2 || "";
+      card.dataset.addr3 = item.addr3 || "";
       if (item.lat != null && item.lng != null) {
-        card.dataset.lat = item.lat;
-        card.dataset.lng = item.lng;
+        card.dataset.lat  = item.lat;
+        card.dataset.lng  = item.lng;
+      }
+      card.dataset.area = item.area || "";
+
+      // 上部（横書き2行）
+      const top = document.createElement("div");
+      top.className = "card-top";
+
+      const noEl = document.createElement("div");
+      noEl.className = "card-no";
+      noEl.textContent = item.no || "";
+
+      const typeEl = document.createElement("div");
+      typeEl.className = "card-type";
+      typeEl.textContent = item.type || "";
+
+      top.appendChild(noEl);
+      top.appendChild(typeEl);
+
+      // 下部（縦書き 名前＋住所3分割）
+      const main = document.createElement("div");
+      main.className = "card-main";
+
+      const nameEl = document.createElement("div");
+      nameEl.className = "vertical-text name-text";
+      nameEl.textContent = item.name || "";
+
+      const addr1El = document.createElement("div");
+      addr1El.className = "vertical-text addr-text";
+      addr1El.textContent = item.addr1 || "";
+
+      const addr2El = document.createElement("div");
+      addr2El.className = "vertical-text addr-text";
+      addr2El.textContent = item.addr2 || "";
+
+      const addr3El = document.createElement("div");
+      addr3El.className = "vertical-text addr-text";
+      addr3El.textContent = item.addr3 || "";
+
+      main.appendChild(nameEl);
+      main.appendChild(addr1El);
+      main.appendChild(addr2El);
+      if (item.addr3) {
+        main.appendChild(addr3El);
       }
 
-      const span = document.createElement("div");
-      span.className = "card-text";
-      span.textContent = item.label;
-
-      card.appendChild(span);
-      group.appendChild(card);
+      card.appendChild(top);
+      card.appendChild(main);
 
       // タップで地図表示
       card.addEventListener("click", onCardClick);
+
+      group.appendChild(card);
     });
 
     // 5件に満たない分は空カードで埋める
@@ -340,13 +438,21 @@ mapClose.addEventListener("click", () => {
  */
 function onCardClick(e) {
   const card = e.currentTarget;
-  const label = card.dataset.label || "地図";
+  const no    = card.dataset.no   || "";
+  const name  = card.dataset.name || "";
+  const addr1 = card.dataset.addr1 || "";
+  const addr2 = card.dataset.addr2 || "";
+  const addr3 = card.dataset.addr3 || "";
+
+  const labelMain = `${no} ${name}`.trim();
+  const labelAddr = [addr1, addr2, addr3].filter(Boolean).join(" ");
+  const label = (labelMain || labelAddr || "地図").slice(0, 40);
 
   const lat = card.dataset.lat ? Number(card.dataset.lat) : null;
   const lng = card.dataset.lng ? Number(card.dataset.lng) : null;
 
   if (lat == null || lng == null || Number.isNaN(lat) || Number.isNaN(lng)) {
-    alert("この順路には緯度・経度が設定されていません。\nCSVに「表示名,緯度,経度」の形式で設定してください。");
+    alert("この順路には緯度・経度が設定されていません。\nCSVに「購読者番号,新聞種類,名前,地名,番地,建物,緯度,経度,区域」の形式で設定してください。");
     return;
   }
 
@@ -374,7 +480,7 @@ function openMap(label, lat, lng) {
     destMarker.setLatLng([lat, lng]);
   }
 
-  // サイズ調整（オーバーレイ表示直後はサイズが取れないことがあるため）
+  // サイズ調整
   setTimeout(() => {
     map.invalidateSize();
   }, 200);
@@ -425,9 +531,6 @@ function startGeoWatch() {
       } else {
         userMarker.setLatLng(latlng);
       }
-
-      // ここで map.panTo(latlng) すると常時追尾になります
-      // （気になる場合はコメントアウトしたままでOK）
     },
     err => {
       console.warn("現在地取得に失敗:", err);
@@ -442,4 +545,5 @@ function startGeoWatch() {
 </script>
 </body>
 </html>
+
 
