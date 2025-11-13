@@ -3,7 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-<title>順路帳ビューア（縦書き）</title>
+<title>順路帳＋地図（縦書き）</title>
+
+<!-- Leaflet（地図ライブラリ） -->
+<link
+  rel="stylesheet"
+  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+/>
+<script
+  src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js">
+</script>
+
 <style>
   :root {
     --top-bar-height: 48px;
@@ -14,7 +24,8 @@
     font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     overflow: hidden;
   }
-  /* 上部バー（CSV選択用） */
+
+  /* 上部バー（CSV選択など） */
   #top-bar {
     height: var(--top-bar-height);
     display: flex;
@@ -43,7 +54,7 @@
     opacity: .8;
   }
 
-  /* カードの入る横スクロール部分 */
+  /* カード横スクロール */
   #container {
     display: flex;
     overflow-x: auto;
@@ -52,17 +63,17 @@
     white-space: nowrap;
   }
 
-  /* 1ページ＝5件分のかたまり */
+  /* 1ページ＝5件 */
   .group {
     display: flex;
     flex-direction: row;
-    flex: 0 0 100vw;      /* 画面幅ちょうど */
+    flex: 0 0 100vw;
     scroll-snap-align: start;
     padding: 6px;
     box-sizing: border-box;
   }
 
-  /* 1件ぶんのカード */
+  /* 1件のカード */
   .card {
     background: #ffffff;
     margin: 4px;
@@ -74,26 +85,78 @@
     display: flex;
     justify-content: center;
     align-items: center;
+    cursor: pointer;
+    touch-action: manipulation;
   }
 
-  /* 縦書きテキスト */
+  /* 縦書き */
   .card-text {
     writing-mode: vertical-rl;
     text-orientation: mixed;
-    font-size: 2rem;              /* 文字大きめ */
+    font-size: 2rem;
     font-weight: bold;
     line-height: 1.2;
     text-align: center;
     word-break: break-all;
   }
 
-  /* スクロールバーを目立たなく */
   #container::-webkit-scrollbar {
     height: 4px;
   }
   #container::-webkit-scrollbar-thumb {
     background: #999;
     border-radius: 2px;
+  }
+
+  /* 地図オーバーレイ */
+  #mapOverlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    display: none;
+    z-index: 1000;
+  }
+  #mapPanel {
+    position: absolute;
+    top: 5%;
+    left: 5%;
+    width: 90%;
+    height: 90%;
+    background: #fff;
+    border-radius: 14px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  #mapHeader {
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 8px;
+    box-sizing: border-box;
+    background: #333;
+    color: #fff;
+    font-size: 14px;
+  }
+  #mapTitle {
+    flex: 1;
+    padding-right: 8px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #mapClose {
+    border: none;
+    background: #fff;
+    color: #333;
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-weight: bold;
+    cursor: pointer;
+  }
+  #map {
+    flex: 1;
   }
 </style>
 </head>
@@ -102,35 +165,44 @@
 <div id="top-bar">
   <label for="csvFile">CSVを選択</label>
   <input id="csvFile" type="file" accept=".csv">
-  <div id="status">横向き推奨／1ページ5件表示</div>
+  <div id="status">横向き推奨／1ページ5件表示／タップで地図</div>
 </div>
 
 <div id="container"></div>
 
+<!-- 地図オーバーレイ -->
+<div id="mapOverlay">
+  <div id="mapPanel">
+    <div id="mapHeader">
+      <div id="mapTitle">地図</div>
+      <button id="mapClose">閉じる</button>
+    </div>
+    <div id="map"></div>
+  </div>
+</div>
+
 <script>
-// ▼ デフォルトのダミーデータ（CSVを選ぶ前に表示される） ▼
-let data = [
-  "101 山田",
-  "102 佐藤",
-  "103 鈴木",
-  "104 高橋",
-  "105 伊藤",
-  "106 渡辺",
-  "107 小林",
-  "108 加藤",
-  "109 吉田",
-  "110 山本",
-  "111 中村",
-  "112 木村"
+// ===== データ構造 =====
+// { label: "101 山田", lat: 35.0, lng: 135.0 } の配列
+let entries = [
+  // デフォルトのダミーデータ（CSV読み込みで上書きされます）
+  { label: "101 山田", lat: null, lng: null },
+  { label: "102 佐藤", lat: null, lng: null },
+  { label: "103 鈴木", lat: null, lng: null },
+  { label: "104 高橋", lat: null, lng: null },
+  { label: "105 伊藤", lat: null, lng: null },
+  { label: "106 渡辺", lat: null, lng: null },
+  { label: "107 小林", lat: null, lng: null },
+  { label: "108 加藤", lat: null, lng: null },
+  { label: "109 吉田", lat: null, lng: null },
+  { label: "110 山本", lat: null, lng: null }
 ];
-// ▲ ここはそのままでOK（CSVを読み込むと上書きされます） ▲
 
-
-// ---- CSV 読み込み ----
 const fileInput = document.getElementById("csvFile");
 const statusEl  = document.getElementById("status");
 const container = document.getElementById("container");
 
+// ===== CSV 読み込み =====
 fileInput.addEventListener("change", (e) => {
   const file = e.target.files[0];
   if (!file) return;
@@ -138,26 +210,25 @@ fileInput.addEventListener("change", (e) => {
   const reader = new FileReader();
   reader.onload = (ev) => {
     const text = ev.target.result;
-    const parsed = parseCsvToTextArray(text);
+    const parsed = parseCsvToEntries(text);
     if (parsed.length === 0) {
       alert("有効なデータがありませんでした。CSVの内容を確認してください。");
       return;
     }
-    data = parsed;
-    statusEl.textContent = `${file.name} を読み込みました（${data.length}件）`;
-    render();
+    entries = parsed;
+    statusEl.textContent = `${file.name} を読み込みました（${entries.length}件）`;
+    renderCards();
   };
   reader.readAsText(file, "UTF-8");
 });
 
 /**
- * CSV文字列 → 表示用テキストの配列に変換
- * ルール：
- *   - 1行1件
- *   - カンマがある場合：2列目を表示（なければ1列目）
- *   - 先頭行が「順番,表示名」などのヘッダーっぽい場合は自動スキップ
+ * CSV文字列 → {label,lat,lng}[] に変換
+ * 想定フォーマット：
+ *   表示名,緯度,経度
+ * 先頭行に「表示」「name」「緯度」「lat」などがあればヘッダーとしてスキップ
  */
-function parseCsvToTextArray(csvText) {
+function parseCsvToEntries(csvText) {
   const lines = csvText.split(/\r?\n/).map(l => l.trim()).filter(l => l);
   const result = [];
 
@@ -165,30 +236,38 @@ function parseCsvToTextArray(csvText) {
     const cols = line.split(",");
     const joined = cols.join("");
 
-    // 1行目がヘッダーっぽければスキップ
+    // ヘッダー判定（1行目だけ）
     if (
       idx === 0 &&
-      /順|番|order|Order|表示|name|Name/i.test(joined)
+      /表示|name|Name|緯度|経度|lat|lng|Lon|long/i.test(joined)
     ) {
       return;
     }
 
-    let value = "";
-    if (cols.length >= 2) {
-      value = cols[1].trim() || cols[0].trim();
-    } else {
-      value = cols[0].trim();
+    if (cols.length === 0) return;
+
+    const label = (cols[0] || "").trim();
+    if (!label) return;
+
+    let lat = null;
+    let lng = null;
+
+    if (cols.length >= 3) {
+      const latNum = Number(cols[1].trim());
+      const lngNum = Number(cols[2].trim());
+      if (!Number.isNaN(latNum) && !Number.isNaN(lngNum)) {
+        lat = latNum;
+        lng = lngNum;
+      }
     }
 
-    if (value) {
-      result.push(value);
-    }
+    result.push({ label, lat, lng });
   });
 
   return result;
 }
 
-// ---- 5件ずつ分割 ----
+// ===== 5件ずつ分割 =====
 function chunk(array, size) {
   const result = [];
   for (let i = 0; i < array.length; i += size) {
@@ -197,10 +276,10 @@ function chunk(array, size) {
   return result;
 }
 
-// ---- 画面に描画 ----
-function render() {
+// ===== 順路カード表示 =====
+function renderCards() {
   container.innerHTML = "";
-  const groups = chunk(data, 5);
+  const groups = chunk(entries, 5);
 
   groups.forEach(groupData => {
     const group = document.createElement("div");
@@ -210,15 +289,25 @@ function render() {
       const card = document.createElement("div");
       card.className = "card";
 
+      // 緯度経度をデータ属性に
+      card.dataset.label = item.label;
+      if (item.lat != null && item.lng != null) {
+        card.dataset.lat = item.lat;
+        card.dataset.lng = item.lng;
+      }
+
       const span = document.createElement("div");
       span.className = "card-text";
-      span.textContent = item;
+      span.textContent = item.label;
 
       card.appendChild(span);
       group.appendChild(card);
+
+      // タップで地図表示
+      card.addEventListener("click", onCardClick);
     });
 
-    // 5件に満たない分は空カードで埋めて幅を合わせる
+    // 5件に満たない分は空カードで埋める
     for (let i = groupData.length; i < 5; i++) {
       const empty = document.createElement("div");
       empty.className = "card";
@@ -230,8 +319,127 @@ function render() {
   });
 }
 
-// 初期表示
-render();
+// 初期描画
+renderCards();
+
+// ====== 地図関連 ======
+let map;
+let destMarker;
+let userMarker;
+let geoWatchId = null;
+const mapOverlay = document.getElementById("mapOverlay");
+const mapTitle   = document.getElementById("mapTitle");
+const mapClose   = document.getElementById("mapClose");
+
+mapClose.addEventListener("click", () => {
+  mapOverlay.style.display = "none";
+});
+
+/**
+ * カードタップ時
+ */
+function onCardClick(e) {
+  const card = e.currentTarget;
+  const label = card.dataset.label || "地図";
+
+  const lat = card.dataset.lat ? Number(card.dataset.lat) : null;
+  const lng = card.dataset.lng ? Number(card.dataset.lng) : null;
+
+  if (lat == null || lng == null || Number.isNaN(lat) || Number.isNaN(lng)) {
+    alert("この順路には緯度・経度が設定されていません。\nCSVに「表示名,緯度,経度」の形式で設定してください。");
+    return;
+  }
+
+  openMap(label, lat, lng);
+}
+
+/**
+ * 地図オーバーレイを開く
+ */
+function openMap(label, lat, lng) {
+  mapTitle.textContent = label;
+  mapOverlay.style.display = "block";
+
+  // 初回だけ地図初期化
+  if (!map) {
+    initMap(lat, lng);
+  } else {
+    map.setView([lat, lng], 17);
+  }
+
+  // 配達先マーカー更新
+  if (!destMarker) {
+    destMarker = L.marker([lat, lng]).addTo(map);
+  } else {
+    destMarker.setLatLng([lat, lng]);
+  }
+
+  // サイズ調整（オーバーレイ表示直後はサイズが取れないことがあるため）
+  setTimeout(() => {
+    map.invalidateSize();
+  }, 200);
+}
+
+/**
+ * 地図初期化（国土地理院タイル＋現在地）
+ */
+function initMap(lat, lng) {
+  map = L.map("map");
+
+  // 国土地理院 標準地図
+  L.tileLayer(
+    "https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png",
+    {
+      attribution: "地理院タイル",
+      maxZoom: 18,
+      minZoom: 5
+    }
+  ).addTo(map);
+
+  map.setView([lat, lng], 17);
+
+  // 現在地追跡開始
+  startGeoWatch();
+}
+
+/**
+ * 現在地監視
+ */
+function startGeoWatch() {
+  if (!navigator.geolocation) {
+    console.warn("Geolocation がサポートされていません。");
+    return;
+  }
+  if (geoWatchId != null) return; // 重複開始防止
+
+  geoWatchId = navigator.geolocation.watchPosition(
+    pos => {
+      const { latitude, longitude } = pos.coords;
+
+      const latlng = [latitude, longitude];
+
+      if (!userMarker) {
+        userMarker = L.circleMarker(latlng, {
+          radius: 8
+        }).addTo(map);
+      } else {
+        userMarker.setLatLng(latlng);
+      }
+
+      // ここで map.panTo(latlng) すると常時追尾になります
+      // （気になる場合はコメントアウトしたままでOK）
+    },
+    err => {
+      console.warn("現在地取得に失敗:", err);
+    },
+    {
+      enableHighAccuracy: true,
+      maximumAge: 10000,
+      timeout: 20000
+    }
+  );
+}
 </script>
 </body>
 </html>
+
