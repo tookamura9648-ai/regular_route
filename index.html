@@ -310,7 +310,7 @@ function parseCsvToEntries(csvText) {
 
     if (!no && !name) return;  // どちらも空ならスキップ
 
-    let lat = null;
+        let lat = null;
     let lng = null;
     if (cols.length >= 8) {
       const latNum = Number((cols[6] || "").trim());
@@ -321,6 +321,10 @@ function parseCsvToEntries(csvText) {
       }
     }
 
+    // ★ 区域をここで取り出す（9番目の列 index 8）
+    const area = (cols[8] || "").trim();
+
+    // ★ 備考は10番目の列（index 9）
     const note = (cols[9] || "").trim();
 
     result.push({ no, type, name, addr1, addr2, addr3, lat, lng, area, note });
@@ -329,6 +333,7 @@ function parseCsvToEntries(csvText) {
 
   return result;
 }
+
 
 // ===== 5件ずつ分割 =====
 function chunk(array, size) {
