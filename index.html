@@ -106,6 +106,14 @@
     opacity: 0.9;
   }
 
+  .card-note {
+  font-size: 0.85rem;
+  color: #666;
+  margin-top: 2px;
+  line-height: 1.1;
+}
+
+
   /* 下部：名前＋住所（縦書き） */
   .card-main {
     flex: 1;
@@ -311,9 +319,10 @@ function parseCsvToEntries(csvText) {
       }
     }
 
-    const area = (cols[8] || "").trim();
+    const note = (cols[9] || "").trim();
 
-    result.push({ no, type, name, addr1, addr2, addr3, lat, lng, area });
+    result.push({ no, type, name, addr1, addr2, addr3, lat, lng, area, note });
+
   });
 
   return result;
@@ -368,6 +377,16 @@ function renderCards() {
 
       top.appendChild(noEl);
       top.appendChild(typeEl);
+      // 備考
+      const noteEl = document.createElement("div");
+      noteEl.className = "card-note";
+      noteEl.textContent = item.note || "";
+      
+      // note が空でなければ表示
+      if (item.note) {
+        top.appendChild(noteEl);
+      }
+
 
       // 下部（縦書き 名前＋住所3分割）
       const main = document.createElement("div");
