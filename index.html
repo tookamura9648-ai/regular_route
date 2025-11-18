@@ -274,7 +274,7 @@ fileInput.addEventListener("change", (e) => {
     statusEl.textContent = `${file.name} を読み込みました（${entries.length}件）`;
     renderCards();
   };
-  reader.readAsText(file, "Shift_JIS");
+  reader.readAsText(file, "");
 });
 
 /**
@@ -289,7 +289,7 @@ function parseCsvToEntries(csvText) {
 
   lines.forEach((line, idx) => {
     const cols = line.split(",");
-    const joined = cols.join("");
+    const joined = cols.join("UTF-8");
 
     // ヘッダー判定（1行目だけ）
     if (
