@@ -283,56 +283,107 @@ fileInput.addEventListener("change", (e) => {
  *   購読者番号,新聞種類,名前,地名,番地,建物,緯度,経度,区域
  * 先頭行にヘッダーらしき語が入っていればスキップ
  */
+/**
+ * シンプルCSVパーサー
+ * ・ダブルクォートで囲まれたフィールド中の改行を許可
+ * ・"" は " として解釈
+ */
+function parseCSV(text) {
+  const rows = [];
+  let row = [];
+  let field = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+
+    if (c === '"') {
+      if (inQuotes && text[i + 1] === '"') {
+        // "" -> " として扱う
+        field += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (c === "," && !inQuotes) {
+      // フィールド区切り
+      row.push(field);
+      field = "";
+    } else if ((c === "\n" || c === "\r") && !inQuotes) {
+      // レコード区切り（CRLF対応）
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = "";
+    } else {
+      field += c;
+    }
+  }
+
+  // 最後のフィールド／行
+  if (field.length > 0 || row.length > 0) {
+    row.push(field);
+    rows.push(row);
+  }
+
+  return rows;
+}
+
+/**
+ * CSV文字列 → {no,type,name,addr1,addr2,addr3,lat,lng,area,note}[] に変換
+ * 想定フォーマット：
+ *   購読者番号,新聞種類,名前,地名,番地,建物,緯度,経度,区域,備考
+ * 先頭行にヘッダーらしき語が入っていればスキップ
+ */
 function parseCsvToEntries(csvText) {
-  const lines = csvText.split(/\r?\n/).map(l => l.trim()).filter(l => l);
+  const rows = parseCSV(csvText);
   const result = [];
 
-  lines.forEach((line, idx) => {
-    const cols = line.split(",");
-    const joined = cols.join("UTF-8");
+  rows.forEach((colsRaw, idx) => {
+    // 各セルの前後の空白を削除
+    const cols = colsRaw.map(c => (c || "").trim());
+    if (cols.every(c => c === "")) return; // 全部空ならスキップ
+
+    const joined = cols.join("");
 
     // ヘッダー判定（1行目だけ）
     if (
       idx === 0 &&
-      /購読|番号|新聞|種類|名前|氏名|地名|番地|建物|住所|緯度|経度|区域|area/i.test(joined)
+      /購読|番号|新聞|種類|名前|氏名|地名|番地|建物|住所|緯度|経度|区域|備考|area|note/i.test(joined)
     ) {
       return;
     }
 
-    if (cols.length === 0) return;
+    const no    = cols[0] || "";
+    const type  = cols[1] || "";
+    const name  = cols[2] || "";
+    const addr1 = cols[3] || ""; // 地名
+    const addr2 = cols[4] || ""; // 番地
+    const addr3 = cols[5] || ""; // 建物
 
-    const no    = (cols[0] || "").trim();
-    const type  = (cols[1] || "").trim();
-    const name  = (cols[2] || "").trim();
-    const addr1 = (cols[3] || "").trim(); // 地名
-    const addr2 = (cols[4] || "").trim(); // 番地
-    const addr3 = (cols[5] || "").trim(); // 建物
+    if (!no && !name) return;
 
-    if (!no && !name) return;  // どちらも空ならスキップ
-
-        let lat = null;
+    let lat = null;
     let lng = null;
     if (cols.length >= 8) {
-      const latNum = Number((cols[6] || "").trim());
-      const lngNum = Number((cols[7] || "").trim());
+      const latNum = Number((cols[6] || "").replace(/,/g, ""));
+      const lngNum = Number((cols[7] || "").replace(/,/g, ""));
       if (!Number.isNaN(latNum) && !Number.isNaN(lngNum)) {
         lat = latNum;
         lng = lngNum;
       }
     }
 
-    // ★ 区域をここで取り出す（9番目の列 index 8）
-    const area = (cols[8] || "").trim();
-
-    // ★ 備考は10番目の列（index 9）
-    const note = (cols[9] || "").trim();
+    const area = cols[8] || "";
+    const note = cols[9] || "";
 
     result.push({ no, type, name, addr1, addr2, addr3, lat, lng, area, note });
-
   });
 
   return result;
 }
+
 
 
 // ===== 5件ずつ分割 =====
