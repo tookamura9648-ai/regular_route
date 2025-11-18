@@ -274,7 +274,7 @@ fileInput.addEventListener("change", (e) => {
     statusEl.textContent = `${file.name} を読み込みました（${entries.length}件）`;
     renderCards();
   };
-  reader.readAsText(file, "UTF-8");
+  reader.readAsText(file, "Shift_JIS");
 });
 
 /**
