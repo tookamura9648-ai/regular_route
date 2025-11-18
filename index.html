@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-<title>順路帳＋地図（縦書き・住所3分割版）</title>
+<title>順路帳＋地図（GitHub自動読み込み版）</title>
 
 <!-- Leaflet（地図ライブラリ） -->
 <link
@@ -16,7 +16,7 @@
 
 <style>
   :root {
-    --top-bar-height: 48px;
+    --top-bar-height: 52px;
   }
   body {
     margin: 0;
@@ -25,7 +25,7 @@
     overflow: hidden;
   }
 
-  /* 上部バー（CSV選択など） */
+  /* 上部バー（ステータス＆手動CSV） */
   #top-bar {
     height: var(--top-bar-height);
     display: flex;
@@ -34,24 +34,36 @@
     box-sizing: border-box;
     background: #333;
     color: #fff;
-    font-size: 14px;
+    font-size: 13px;
+    gap: 8px;
   }
+  #top-bar-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  #top-bar-right {
+    margin-left: auto;
+  }
+  #top-bar button,
   #top-bar label {
     display: inline-block;
-    padding: 6px 10px;
+    padding: 4px 8px;
     border-radius: 6px;
     background: #fff;
     color: #333;
     font-weight: bold;
-    margin-right: 8px;
+    font-size: 12px;
+    border: none;
     cursor: pointer;
+    white-space: nowrap;
   }
   #csvFile {
     display: none;
   }
   #status {
-    font-size: 12px;
-    opacity: .8;
+    font-size: 11px;
+    opacity: 0.9;
   }
 
   /* カード横スクロール */
@@ -89,6 +101,7 @@
     touch-action: manipulation;
   }
 
+  /* 上部：購読者番号 & 新聞種類 & 備考（横書き） */
   .card-top {
     width: 100%;
     display: flex;
@@ -98,28 +111,25 @@
     margin-bottom: 4px;
     white-space: pre-line;
 
-    background: #000;      /* 黒背景 */
-    color: #fff;           /* 白文字 */
-    padding: 4px 6px;      /* 少し余白 */
-    border-radius: 6px;    /* 角を丸く */
-}
-
-
+    background: rgba(0,0,0,0.9);  /* 黒背景 */
+    color: #fff;                  /* 白文字 */
+    padding: 4px 6px;
+    border-radius: 6px;
+  }
   .card-no {
     font-weight: bold;
+    color: #fff;
   }
   .card-type {
     font-size: 0.95rem;
-    opacity: 0.9;
+    color: #ddd;
   }
-
   .card-note {
-  font-size: 0.85rem;
-  color: #f00;
-  margin-top: 2px;
-  line-height: 1.1;
-}
-
+    font-size: 0.85rem;
+    color: #ccc;
+    margin-top: 2px;
+    line-height: 1.1;
+  }
 
   /* 下部：名前＋住所（縦書き） */
   .card-main {
@@ -142,11 +152,11 @@
     font-weight: bold;
   }
 
-  /* 住所3分割は名前より少し小さめ */
+  /* 住所3分割は名前より少し小さめ、数字は縦書き */
   .addr-text {
     font-size: 1.2rem;
     opacity: 0.9;
-    text-orientation: upright;   /* ← 数字を縦にする */
+    text-orientation: upright;
   }
 
   #container::-webkit-scrollbar {
@@ -212,9 +222,14 @@
 <body>
 
 <div id="top-bar">
-  <label for="csvFile">CSVを選択</label>
-  <input id="csvFile" type="file" accept=".csv">
-  <div id="status">横向き推奨／1ページ5件表示／タップで地図</div>
+  <div id="top-bar-left">
+    <button id="reloadGitHub">GitHub再読込</button>
+    <label for="csvFile">ローカルCSV</label>
+    <input id="csvFile" type="file" accept=".csv">
+  </div>
+  <div id="top-bar-right">
+    <div id="status">GitHubのCSVから自動読み込み（横向き推奨／タップで地図）</div>
+  </div>
 </div>
 
 <div id="container"></div>
@@ -231,10 +246,14 @@
 </div>
 
 <script>
+// ====== GitHub上のCSV URL（ここを書き換えて使ってください） ======
+const GITHUB_CSV_URL =
+  "https://raw.githubusercontent.com/ユーザー名/リポジトリ名/ブランチ名/フォルダ名/ファイル名.csv";
+
 // ===== データ構造 =====
-// { no, type, name, addr1, addr2, addr3, lat, lng, area }
+// { no, type, name, addr1, addr2, addr3, lat, lng, area, note }
 let entries = [
-  // ダミーデータ（CSV読み込みで上書きされます）
+  // ダミーデータ（GitHub/CSV読み込みで上書きされます）
   {
     no: "A001",
     type: "朝刊",
@@ -245,7 +264,7 @@ let entries = [
     lat: null,
     lng: null,
     area: "南部",
-    note: "ヨミポ"
+    note: ""
   },
   {
     no: "A002",
@@ -257,15 +276,50 @@ let entries = [
     lat: null,
     lng: null,
     area: "南部",
-    note: null
+    note: "犬に注意"
   }
 ];
 
-const fileInput = document.getElementById("csvFile");
-const statusEl  = document.getElementById("status");
-const container = document.getElementById("container");
+const fileInput   = document.getElementById("csvFile");
+const statusEl    = document.getElementById("status");
+const container   = document.getElementById("container");
+const reloadBtn   = document.getElementById("reloadGitHub");
 
-// ===== CSV 読み込み =====
+// ====== GitHubから自動読み込み ======
+async function loadCsvFromGitHub() {
+  if (!GITHUB_CSV_URL || GITHUB_CSV_URL.includes("ユーザー名")) {
+    statusEl.textContent = "GitHub CSV URL が未設定です。コード内の GITHUB_CSV_URL を書き換えてください。";
+    return;
+  }
+
+  statusEl.textContent = "GitHub からCSVを読み込み中…";
+
+  try {
+    const res = await fetch(GITHUB_CSV_URL, { cache: "no-cache" });
+    if (!res.ok) {
+      throw new Error("HTTP " + res.status);
+    }
+    const text = await res.text(); // GitHub Raw は UTF-8
+    const parsed = parseCsvToEntries(text);
+    if (parsed.length === 0) {
+      statusEl.textContent = "GitHub CSV は読み込めましたが、有効な行がありません。";
+      return;
+    }
+    entries = parsed;
+    statusEl.textContent = `GitHub から読み込み完了（${entries.length}件）`;
+    renderCards();
+  } catch (err) {
+    console.error("GitHub CSV 読み込みエラー:", err);
+    statusEl.textContent = "GitHub CSV の読み込みに失敗しました。URLや公開設定を確認してください。";
+  }
+}
+
+// GitHub 再読み込みボタン
+reloadBtn.addEventListener("click", () => {
+  loadCsvFromGitHub();
+});
+
+// ===== ローカルCSV 読み込み（Excel標準の Shift_JIS を想定） =====
 fileInput.addEventListener("change", (e) => {
   const file = e.target.files[0];
   if (!file) return;
@@ -279,18 +333,14 @@ fileInput.addEventListener("change", (e) => {
       return;
     }
     entries = parsed;
-    statusEl.textContent = `${file.name} を読み込みました（${entries.length}件）`;
+    statusEl.textContent = `ローカルCSVを読み込みました（${entries.length}件）`;
     renderCards();
   };
-  reader.readAsText(file, "");
+  // 日本語Excelの通常CSVは Shift_JIS
+  reader.readAsText(file, "Shift_JIS");
 });
 
-/**
- * CSV文字列 → {no,type,name,addr1,addr2,addr3,lat,lng,area}[] に変換
- * 想定フォーマット：
- *   購読者番号,新聞種類,名前,地名,番地,建物,緯度,経度,区域
- * 先頭行にヘッダーらしき語が入っていればスキップ
- */
+
 /**
  * シンプルCSVパーサー
  * ・ダブルクォートで囲まれたフィールド中の改行を許可
@@ -392,8 +442,6 @@ function parseCsvToEntries(csvText) {
   return result;
 }
 
-
-
 // ===== 5件ずつ分割 =====
 function chunk(array, size) {
   const result = [];
@@ -428,8 +476,9 @@ function renderCards() {
         card.dataset.lng  = item.lng;
       }
       card.dataset.area = item.area || "";
+      card.dataset.note = item.note || "";
 
-      // 上部（横書き2行）
+      // 上部（横書き：黒背景）
       const top = document.createElement("div");
       top.className = "card-top";
 
@@ -443,16 +492,14 @@ function renderCards() {
 
       top.appendChild(noEl);
       top.appendChild(typeEl);
+
       // 備考
-      const noteEl = document.createElement("div");
-      noteEl.className = "card-note";
-      noteEl.textContent = item.note || "";
-      
-      // note が空でなければ表示
       if (item.note) {
+        const noteEl = document.createElement("div");
+        noteEl.className = "card-note";
+        noteEl.textContent = item.note;
         top.appendChild(noteEl);
       }
-
 
       // 下部（縦書き 名前＋住所3分割）
       const main = document.createElement("div");
@@ -474,14 +521,17 @@ function renderCards() {
       addr3El.className = "vertical-text addr-text";
       addr3El.textContent = item.addr3 || "";
 
+      // 並び順：右から addr1 → addr2 → addr3 → 一番左が名前
       main.appendChild(nameEl);
-
-      // 右側に addr1（地名）→ addr2（番地）→ addr3（建物）
       if (item.addr3) {
         main.appendChild(addr3El);
       }
-      main.appendChild(addr2El);
-      main.appendChild(addr1El);
+      if (item.addr2) {
+        main.appendChild(addr2El);
+      }
+      if (item.addr1) {
+        main.appendChild(addr1El);
+      }
 
       card.appendChild(top);
       card.appendChild(main);
@@ -504,7 +554,7 @@ function renderCards() {
   });
 }
 
-// 初期描画
+// 初期描画（ダミーを表示）
 renderCards();
 
 // ====== 地図関連 ======
@@ -539,7 +589,7 @@ function onCardClick(e) {
   const lng = card.dataset.lng ? Number(card.dataset.lng) : null;
 
   if (lat == null || lng == null || Number.isNaN(lat) || Number.isNaN(lng)) {
-    alert("この順路には緯度・経度が設定されていません。\nCSVに「購読者番号,新聞種類,名前,地名,番地,建物,緯度,経度,区域」の形式で設定してください。");
+    alert("この順路には緯度・経度が設定されていません。\nCSVに「購読者番号,新聞種類,名前,地名,番地,建物,緯度,経度,区域,備考」の形式で設定してください。");
     return;
   }
 
@@ -608,7 +658,6 @@ function startGeoWatch() {
   geoWatchId = navigator.geolocation.watchPosition(
     pos => {
       const { latitude, longitude } = pos.coords;
-
       const latlng = [latitude, longitude];
 
       if (!userMarker) {
@@ -629,6 +678,11 @@ function startGeoWatch() {
     }
   );
 }
+
+// ページ読み込み時にGitHubから自動取得
+window.addEventListener("load", () => {
+  loadCsvFromGitHub();
+});
 </script>
 </body>
 </html>
