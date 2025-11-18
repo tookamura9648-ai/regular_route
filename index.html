@@ -468,11 +468,13 @@ function renderCards() {
       addr3El.textContent = item.addr3 || "";
 
       main.appendChild(nameEl);
-      main.appendChild(addr1El);
-      main.appendChild(addr2El);
+
+      // 右側に addr1（地名）→ addr2（番地）→ addr3（建物）
       if (item.addr3) {
         main.appendChild(addr3El);
       }
+      main.appendChild(addr2El);
+      main.appendChild(addr1El);
 
       card.appendChild(top);
       card.appendChild(main);
