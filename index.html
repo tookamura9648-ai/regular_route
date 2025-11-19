@@ -1,1 +1,766 @@
 
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>順路帳＋地図（GitHub自動読み込み＆カードタップでルート）</title>
+
+<!-- Leaflet（地図ライブラリ） -->
+<link
+  rel="stylesheet"
+  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+/>
+<script
+  src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js">
+</script>
+
+<style>
+  :root {
+    --top-bar-height: 52px;
+  }
+  body {
+    margin: 0;
+    background: #f2f2f2;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    overflow: hidden;
+  }
+
+  /* 上部バー（ステータス＆手動CSV） */
+  #top-bar {
+    height: var(--top-bar-height);
+    display: flex;
+    align-items: center;
+    padding: 4px 8px;
+    box-sizing: border-box;
+    background: #333;
+    color: #fff;
+    font-size: 13px;
+    gap: 8px;
+  }
+  #top-bar-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  #top-bar-right {
+    margin-left: auto;
+  }
+  #top-bar button,
+  #top-bar label {
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 6px;
+    background: #fff;
+    color: #333;
+    font-weight: bold;
+    font-size: 12px;
+    border: none;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  #csvFile {
+    display: none;
+  }
+  #status {
+    font-size: 11px;
+    opacity: 0.9;
+  }
+
+  /* カード横スクロール */
+  #container {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    height: calc(100vh - var(--top-bar-height));
+    white-space: nowrap;
+  }
+
+  /* 1ページ＝5件分 */
+  .group {
+    display: flex;
+    flex-direction: row;
+    flex: 0 0 100vw;
+    scroll-snap-align: start;
+    padding: 6px;
+    box-sizing: border-box;
+  }
+
+  /* 1件のカード */
+  .card {
+    background: #ffffff;
+    margin: 4px;
+    flex: 1;
+    border-radius: 14px;
+    padding: 6px;
+    box-sizing: border-box;
+    border: solid 2px #444;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+
+  /* 上部：購読者番号 & 新聞種類 & 備考（横書き） */
+  .card-top {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    font-size: 1.1rem;
+    line-height: 1.2;
+    margin-bottom: 4px;
+    white-space: pre-line;
+
+    background: rgba(0,0,0,0.9);  /* 黒背景 */
+    color: #fff;                  /* 白文字 */
+    padding: 4px 6px;
+    border-radius: 6px;
+  }
+  .card-no {
+    font-weight: bold;
+    color: #fff;
+  }
+  .card-type {
+    font-size: 0.95rem;
+    color: #ddd;
+  }
+  .card-note {
+    font-size: 0.85rem;
+    color: #ccc;
+    margin-top: 2px;
+    line-height: 1.1;
+  }
+
+  /* 下部：名前＋住所（縦書き） */
+  .card-main {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    gap: 4px;
+    overflow: hidden;
+  }
+
+  .vertical-text {
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    white-space: pre-line;
+    word-break: break-all;
+  }
+
+  .name-text {
+    font-size: 1.8rem;
+    font-weight: bold;
+  }
+
+  /* 住所3分割は名前より少し小さめ、数字は縦書き */
+  .addr-text {
+    font-size: 1.2rem;
+    opacity: 0.9;
+    text-orientation: upright;
+  }
+
+  #container::-webkit-scrollbar {
+    height: 4px;
+  }
+  #container::-webkit-scrollbar-thumb {
+    background: #999;
+    border-radius: 2px;
+  }
+
+  /* 地図オーバーレイ */
+  #mapOverlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    display: none;
+    z-index: 1000;
+  }
+  #mapPanel {
+    position: absolute;
+    top: 5%;
+    left: 5%;
+    width: 90%;
+    height: 90%;
+    background: #fff;
+    border-radius: 14px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  #mapHeader {
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 8px;
+    box-sizing: border-box;
+    background: #333;
+    color: #fff;
+    font-size: 13px;
+    gap: 6px;
+  }
+  #mapTitle {
+    flex: 1;
+    padding-right: 8px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #mapClose {
+    border: none;
+    background: #fff;
+    color: #333;
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-weight: bold;
+    cursor: pointer;
+  }
+  #map {
+    flex: 1;
+  }
+</style>
+</head>
+<body>
+
+<div id="top-bar">
+  <div id="top-bar-left">
+    <button id="reloadGitHub">GitHub再読込</button>
+    <label for="csvFile">ローカルCSV</label>
+    <input id="csvFile" type="file" accept=".csv">
+  </div>
+  <div id="top-bar-right">
+    <div id="status">GitHubのCSVから自動読み込み（横向き推奨／カードタップでナビ）</div>
+  </div>
+</div>
+
+<div id="container"></div>
+
+<!-- 地図オーバーレイ -->
+<div id="mapOverlay">
+  <div id="mapPanel">
+    <div id="mapHeader">
+      <div id="mapTitle">地図</div>
+      <button id="mapClose">閉じる</button>
+    </div>
+    <div id="map"></div>
+  </div>
+</div>
+
+<script>
+// ====== GitHub上のCSV URL（ここを書き換えて使ってください） ======
+const GITHUB_CSV_URL =
+  "https://raw.githubusercontent.com/ユーザー名/リポジトリ名/main/path/to/junro.csv";
+
+// ===== データ構造 =====
+// { no, type, name, addr1, addr2, addr3, lat, lng, area, note }
+let entries = [
+  // ダミーデータ（GitHub/CSV読み込みで上書きされます）
+  {
+    no: "A001",
+    type: "朝刊",
+    name: "山田太郎",
+    addr1: "滋賀県草津市◯◯",
+    addr2: "1-2-3",
+    addr3: "",
+    lat: 35.003,
+    lng: 135.87,
+    area: "南部",
+    note: ""
+  },
+  {
+    no: "A002",
+    type: "朝夕刊",
+    name: "佐藤花子",
+    addr1: "滋賀県草津市△△",
+    addr2: "5-6-7",
+    addr3: "ハイツ101",
+    lat: 35.005,
+    lng: 135.872,
+    area: "南部",
+    note: "犬に注意"
+  }
+];
+
+const fileInput   = document.getElementById("csvFile");
+const statusEl    = document.getElementById("status");
+const container   = document.getElementById("container");
+const reloadBtn   = document.getElementById("reloadGitHub");
+
+// 地図関連
+let map;
+let destMarker;
+let userMarker;
+let geoWatchId = null;
+let routeFromHereLayer = null;
+let userLat = null;
+let userLng = null;
+
+// ====== GitHubから自動読み込み ======
+async function loadCsvFromGitHub() {
+  if (!GITHUB_CSV_URL || GITHUB_CSV_URL.includes("ユーザー名")) {
+    statusEl.textContent = "GitHub CSV URL が未設定です。コード内の GITHUB_CSV_URL を書き換えてください。";
+    renderCards(); // ダミーだけでも表示
+    return;
+  }
+
+  statusEl.textContent = "GitHub からCSVを読み込み中…";
+
+  try {
+    const res = await fetch(GITHUB_CSV_URL, { cache: "no-cache" });
+    if (!res.ok) {
+      throw new Error("HTTP " + res.status);
+    }
+    const text = await res.text(); // GitHub Raw は UTF-8
+    const parsed = parseCsvToEntries(text);
+    if (parsed.length === 0) {
+      statusEl.textContent = "GitHub CSV は読み込めましたが、有効な行がありません。";
+      renderCards();
+      return;
+    }
+    entries = parsed;
+    statusEl.textContent = `GitHub から読み込み完了（${entries.length}件）`;
+    renderCards();
+  } catch (err) {
+    console.error("GitHub CSV 読み込みエラー:", err);
+    statusEl.textContent = "GitHub CSV の読み込みに失敗しました。URLや公開設定を確認してください。ダミーデータを表示中。";
+    renderCards();
+  }
+}
+
+// GitHub 再読み込みボタン
+reloadBtn.addEventListener("click", () => {
+  loadCsvFromGitHub();
+});
+
+// ===== ローカルCSV 読み込み（Excel標準の Shift_JIS を想定） =====
+fileInput.addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    const text = ev.target.result;
+    const parsed = parseCsvToEntries(text);
+    if (parsed.length === 0) {
+      alert("有効なデータがありませんでした。CSVの内容を確認してください。");
+      return;
+    }
+    entries = parsed;
+    statusEl.textContent = `ローカルCSVを読み込みました（${entries.length}件）`;
+    renderCards();
+  };
+  // 日本語Excelの通常CSVは Shift_JIS
+  reader.readAsText(file, "Shift_JIS");
+});
+
+
+/**
+ * シンプルCSVパーサー
+ * ・ダブルクォートで囲まれたフィールド中の改行を許可
+ * ・"" は " として解釈
+ */
+function parseCSV(text) {
+  const rows = [];
+  let row = [];
+  let field = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+
+    if (c === '"') {
+      if (inQuotes && text[i + 1] === '"') {
+        // "" -> " として扱う
+        field += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (c === "," && !inQuotes) {
+      // フィールド区切り
+      row.push(field);
+      field = "";
+    } else if ((c === "\n" || c === "\r") && !inQuotes) {
+      // レコード区切り（CRLF対応）
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = "";
+    } else {
+      field += c;
+    }
+  }
+
+  // 最後のフィールド／行
+  if (field.length > 0 || row.length > 0) {
+    row.push(field);
+    rows.push(row);
+  }
+
+  return rows;
+}
+
+/**
+ * CSV文字列 → {no,type,name,addr1,addr2,addr3,lat,lng,area,note}[] に変換
+ * 想定フォーマット：
+ *   購読者番号,新聞種類,名前,地名,番地,建物,緯度,経度,区域,備考
+ * 先頭行にヘッダーらしき語が入っていればスキップ
+ */
+function parseCsvToEntries(csvText) {
+  const rows = parseCSV(csvText);
+  const result = [];
+
+  rows.forEach((colsRaw, idx) => {
+    // 各セルの前後の空白を削除
+    const cols = colsRaw.map(c => (c || "").trim());
+    if (cols.every(c => c === "")) return; // 全部空ならスキップ
+
+    const joined = cols.join("");
+
+    // ヘッダー判定（1行目だけ）
+    if (
+      idx === 0 &&
+      /購読|番号|新聞|種類|名前|氏名|地名|番地|建物|住所|緯度|経度|区域|備考|area|note/i.test(joined)
+    ) {
+      return;
+    }
+
+    const no    = cols[0] || "";
+    const type  = cols[1] || "";
+    const name  = cols[2] || "";
+    const addr1 = cols[3] || ""; // 地名
+    const addr2 = cols[4] || ""; // 番地
+    const addr3 = cols[5] || ""; // 建物
+
+    if (!no && !name) return;
+
+    let lat = null;
+    let lng = null;
+    if (cols.length >= 8) {
+      const latNum = Number((cols[6] || "").replace(/,/g, ""));
+      const lngNum = Number((cols[7] || "").replace(/,/g, ""));
+      if (!Number.isNaN(latNum) && !Number.isNaN(lngNum)) {
+        lat = latNum;
+        lng = lngNum;
+      }
+    }
+
+    const area = cols[8] || "";
+    const note = cols[9] || "";
+
+    result.push({ no, type, name, addr1, addr2, addr3, lat, lng, area, note });
+  });
+
+  return result;
+}
+
+// ===== 5件ずつ分割 =====
+function chunk(array, size) {
+  const result = [];
+  for (let i = 0; i < array.length; i += size) {
+    result.push(array.slice(i, i + size));
+  }
+  return result;
+}
+
+// ===== 順路カード表示 =====
+function renderCards() {
+  container.innerHTML = "";
+  const groups = chunk(entries, 5);
+
+  groups.forEach(groupData => {
+    const group = document.createElement("div");
+    group.className = "group";
+
+    groupData.forEach(item => {
+      const card = document.createElement("div");
+      card.className = "card";
+
+      // データ属性に格納（地図用）
+      card.dataset.no    = item.no || "";
+      card.dataset.type  = item.type || "";
+      card.dataset.name  = item.name || "";
+      card.dataset.addr1 = item.addr1 || "";
+      card.dataset.addr2 = item.addr2 || "";
+      card.dataset.addr3 = item.addr3 || "";
+      if (item.lat != null && item.lng != null) {
+        card.dataset.lat  = item.lat;
+        card.dataset.lng  = item.lng;
+      }
+      card.dataset.area = item.area || "";
+      card.dataset.note = item.note || "";
+
+      // 上部（横書き：黒背景）
+      const top = document.createElement("div");
+      top.className = "card-top";
+
+      const noEl = document.createElement("div");
+      noEl.className = "card-no";
+      noEl.textContent = item.no || "";
+
+      const typeEl = document.createElement("div");
+      typeEl.className = "card-type";
+      typeEl.textContent = item.type || "";
+
+      top.appendChild(noEl);
+      top.appendChild(typeEl);
+
+      // 備考
+      if (item.note) {
+        const noteEl = document.createElement("div");
+        noteEl.className = "card-note";
+        noteEl.textContent = item.note;
+        top.appendChild(noteEl);
+      }
+
+      // 下部（縦書き 名前＋住所3分割）
+      const main = document.createElement("div");
+      main.className = "card-main";
+
+      const nameEl = document.createElement("div");
+      nameEl.className = "vertical-text name-text";
+      nameEl.textContent = item.name || "";
+
+      const addr1El = document.createElement("div");
+      addr1El.className = "vertical-text addr-text";
+      addr1El.textContent = item.addr1 || "";
+
+      const addr2El = document.createElement("div");
+      addr2El.className = "vertical-text addr-text";
+      addr2El.textContent = item.addr2 || "";
+
+      const addr3El = document.createElement("div");
+      addr3El.className = "vertical-text addr-text";
+      addr3El.textContent = item.addr3 || "";
+
+      // 並び順：右から addr1 → addr2 → addr3 → 一番左が名前
+      main.appendChild(nameEl);
+      if (item.addr3) {
+        main.appendChild(addr3El);
+      }
+      if (item.addr2) {
+        main.appendChild(addr2El);
+      }
+      if (item.addr1) {
+        main.appendChild(addr1El);
+      }
+
+      card.appendChild(top);
+      card.appendChild(main);
+
+      // ★ カードタップで「地図＋現在地→ここ」ルート
+      card.addEventListener("click", onCardClick);
+
+      group.appendChild(card);
+    });
+
+    // 5件に満たない分は空カードで埋める
+    for (let i = groupData.length; i < 5; i++) {
+      const empty = document.createElement("div");
+      empty.className = "card";
+      empty.style.visibility = "hidden";
+      group.appendChild(empty);
+    }
+
+    container.appendChild(group);
+  });
+}
+
+// 初期描画（ダミー表示 or GitHub読み込み後に上書き）
+renderCards();
+
+// ====== 地図オーバーレイまわり ======
+const mapOverlay = document.getElementById("mapOverlay");
+const mapTitle   = document.getElementById("mapTitle");
+const mapClose   = document.getElementById("mapClose");
+
+mapClose.addEventListener("click", () => {
+  mapOverlay.style.display = "none";
+});
+
+/**
+ * カードタップ時
+ */
+function onCardClick(e) {
+  const card = e.currentTarget;
+  const no    = card.dataset.no   || "";
+  const name  = card.dataset.name || "";
+  const addr1 = card.dataset.addr1 || "";
+  const addr2 = card.dataset.addr2 || "";
+  const addr3 = card.dataset.addr3 || "";
+
+  const labelMain = `${no} ${name}`.trim();
+  const labelAddr = [addr1, addr2, addr3].filter(Boolean).join(" ");
+  const label = (labelMain || labelAddr || "地図").slice(0, 40);
+
+  const lat = card.dataset.lat ? Number(card.dataset.lat) : null;
+  const lng = card.dataset.lng ? Number(card.dataset.lng) : null;
+
+  if (lat == null || lng == null || Number.isNaN(lat) || Number.isNaN(lng)) {
+    alert("この順路には緯度・経度が設定されていません。\nCSVに「購読者番号,新聞種類,名前,地名,番地,建物,緯度,経度,区域,備考」の形式で設定してください。");
+    return;
+  }
+
+  openMapAndRoute(label, lat, lng);
+}
+
+/**
+ * 地図オーバーレイを開き、目的地＋ルートも描画
+ */
+function openMapAndRoute(label, lat, lng) {
+  mapTitle.textContent = label;
+  mapOverlay.style.display = "block";
+
+  // 初回だけ地図初期化
+  if (!map) {
+    initMap(lat, lng);
+  } else {
+    map.setView([lat, lng], 17);
+  }
+
+  // 目的地マーカー更新
+  if (!destMarker) {
+    destMarker = L.marker([lat, lng]).addTo(map);
+  } else {
+    destMarker.setLatLng([lat, lng]);
+  }
+
+  // 既存ルートは消す
+  if (routeFromHereLayer) {
+    map.removeLayer(routeFromHereLayer);
+    routeFromHereLayer = null;
+  }
+
+  // サイズ調整
+  setTimeout(() => {
+    map.invalidateSize();
+  }, 200);
+
+  // ★ すぐに「現在地→ここ」のルートを引く
+  routeFromHereTo({ lat, lng });
+}
+
+/**
+ * 地図初期化（国土地理院 標準地図＋現在地）
+ */
+function initMap(lat, lng) {
+  map = L.map("map");
+
+  // 国土地理院 標準地図
+  L.tileLayer(
+    "https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png",
+    {
+      attribution: "地理院タイル",
+      maxZoom: 18,
+      minZoom: 5
+    }
+  ).addTo(map);
+
+  map.setView([lat, lng], 17);
+
+  // 現在地追跡開始
+  startGeoWatch();
+}
+
+/**
+ * 現在地監視
+ */
+function startGeoWatch() {
+  if (!navigator.geolocation) {
+    console.warn("Geolocation がサポートされていません。");
+    return;
+  }
+  if (geoWatchId != null) return; // 重複開始防止
+
+  geoWatchId = navigator.geolocation.watchPosition(
+    pos => {
+      userLat = pos.coords.latitude;
+      userLng = pos.coords.longitude;
+      const latlng = [userLat, userLng];
+
+      if (!userMarker) {
+        userMarker = L.circleMarker(latlng, {
+          radius: 8
+        }).addTo(map);
+      } else {
+        userMarker.setLatLng(latlng);
+      }
+    },
+    err => {
+      console.warn("現在地取得に失敗:", err);
+    },
+    {
+      enableHighAccuracy: true,
+      maximumAge: 10000,
+      timeout: 20000
+    }
+  );
+}
+
+/**
+ * OSRMへ問い合わせ（プロフィールを複数試す）
+ */
+async function routeBetween(A, B) {
+  const candidates = ['bike', 'bicycle', 'cycling', 'foot', 'walking', 'car', 'driving'];
+  let lastErr = 'unknown';
+
+  for (const profile of candidates) {
+    const url =
+      `https://router.project-osrm.org/route/v1/${profile}/` +
+      `${A.lng},${A.lat};${B.lng},${B.lat}` +
+      `?overview=full&geometries=geojson&alternatives=false&steps=false`;
+    try {
+      const res = await fetch(url);
+      const json = await res.json();
+      if (json.code === "Ok") {
+        return json.routes[0].geometry.coordinates; // [ [lon,lat], ... ]
+      }
+      lastErr = json.code || "OSRM error";
+    } catch (e) {
+      lastErr = e.message;
+    }
+    // 軽くディレイ（レート制御）
+    await new Promise(r => setTimeout(r, 250));
+  }
+  throw new Error(`ルート取得失敗（tried=${candidates.join("/")}, last="${lastErr}"）`);
+}
+
+/**
+ * 現在地 → 目的地 ルート描画
+ */
+async function routeFromHereTo(target) {
+  if (userLat == null || userLng == null) {
+    // まだGPSが取れていないときはメッセージ
+    alert("現在地がまだ取得できていません。\n位置情報の許可とGPSの状態を確認して、少し待ってから再度タップしてください。");
+    return;
+  }
+  const A = { lat: userLat, lng: userLng };
+  const B = target;
+
+  try {
+    const seg = await routeBetween(A, B);
+    const latlngs = seg.map(([lon, lat]) => [lat, lon]);
+    if (routeFromHereLayer) {
+      map.removeLayer(routeFromHereLayer);
+    }
+    routeFromHereLayer = L.polyline(latlngs, {
+      color: "blue",
+      weight: 4,
+      opacity: 0.9
+    }).addTo(map);
+    map.fitBounds(routeFromHereLayer.getBounds(), { padding: [30, 30] });
+  } catch (err) {
+    alert("現在地からのルート取得に失敗しました：" + err.message);
+    console.error(err);
+  }
+}
+
+// ページ読み込み時にGitHubから自動取得
+window.addEventListener("load", () => {
+  loadCsvFromGitHub();
+});
+</script>
+</body>
+</html>
