@@ -747,7 +747,7 @@ async function routeFromHereTo(target) {
     }
     routeFromHereLayer = L.polyline(latlngs, {
       color: "blue",
-      weight: 4,
+      weight: 2,
       opacity: 0.9
     }).addTo(map);
     map.fitBounds(routeFromHereLayer.getBounds(), { padding: [30, 30] });
