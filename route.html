@@ -296,6 +296,18 @@ let routeFromHereLayer = null;
 let userLat = null;
 let userLng = null;
 
+function filterByUrlParams(list) {
+const params = new URLSearchParams(location.search);
+const areaParam = params.get("area") || "";
+const typeParam = params.get("type") || "";
+
+return list.filter(e => {
+  if (areaParam && e.area !== areaParam) return false;
+  if (typeParam && e.type !== typeParam) return false;
+  return true;
+});
+}
+
 // ====== GitHubから自動読み込み ======
 async function loadCsvFromGitHub() {
   if (!GITHUB_CSV_URL || GITHUB_CSV_URL.includes("ユーザー名")) {
@@ -347,6 +359,7 @@ fileInput.addEventListener("change", (e) => {
       return;
     }
     entries = parsed;
+    entries = filterByUrlParams(entries);
     statusEl.textContent = `ローカルCSVを読み込みました（${entries.length}件）`;
     renderCards();
   };
