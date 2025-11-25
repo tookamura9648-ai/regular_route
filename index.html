@@ -1,0 +1,476 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>区域 × 新聞種 選択（順路帳起動）</title>
+<style>
+  :root {
+    --top-bar-height: 70px;
+  }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #f4f4f8;
+    color: #222;
+  }
+  #top-bar {
+    height: var(--top-bar-height);
+    display: flex;
+    align-items: center;
+    padding: 6px 10px;
+    box-sizing: border-box;
+    background: #333;
+    color: #fff;
+    font-size: 13px;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  #top-bar-left, #top-bar-center, #top-bar-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  #top-bar-right {
+    margin-left: auto;
+  }
+  #top-bar button,
+  #top-bar label,
+  #top-bar select {
+    padding: 4px 8px;
+    border-radius: 6px;
+    border: none;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  #top-bar button,
+  #top-bar label {
+    background: #fff;
+    color: #333;
+    font-weight: bold;
+    cursor: pointer;
+  }
+  #top-bar select {
+    background: #fafafa;
+    color: #222;
+    border: 1px solid #ccc;
+  }
+  #csvFile {
+    display: none;
+  }
+  #status {
+    font-size: 11px;
+    opacity: 0.9;
+  }
+
+  #main {
+    height: calc(100vh - var(--top-bar-height));
+    box-sizing: border-box;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  #summary {
+    font-size: 13px;
+    margin-bottom: 6px;
+  }
+
+  #list {
+    flex: 1;
+    overflow-y: auto;
+    border-radius: 10px;
+    background: #fff;
+    padding: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.07);
+    box-sizing: border-box;
+  }
+
+  .row {
+    padding: 6px 4px;
+    border-bottom: 1px solid #eee;
+    font-size: 13px;
+  }
+  .row:last-child {
+    border-bottom: none;
+  }
+  .row-header {
+    font-weight: bold;
+    font-size: 12px;
+    color: #555;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 2px;
+  }
+  .row-main {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .chip {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 999px;
+    font-size: 11px;
+    background: #eee;
+    color: #333;
+  }
+  .chip-area {
+    background: #e0f2ff;
+  }
+  .chip-type {
+    background: #ffe9c7;
+  }
+  .name {
+    font-weight: bold;
+  }
+  .addr {
+    opacity: 0.9;
+  }
+  .note {
+    font-size: 11px;
+    color: #666;
+    margin-top: 2px;
+  }
+
+  #startBtn {
+    margin-left: 8px;
+    background: #4caf50;
+    color: #fff;
+  }
+
+  @media (max-width: 600px) {
+    #top-bar {
+      height: auto;
+    }
+    #main {
+      height: auto;
+      min-height: calc(100vh - 70px);
+    }
+  }
+</style>
+</head>
+<body>
+
+<div id="top-bar">
+  <div id="top-bar-left">
+    <button id="reloadGitHub">GitHub再読込</button>
+    <label for="csvFile">ローカルCSV</label>
+    <input id="csvFile" type="file" accept=".csv">
+  </div>
+  <div id="top-bar-center">
+    <span>区域:</span>
+    <select id="areaFilter">
+      <option value="">すべて</option>
+    </select>
+    <span>新聞種:</span>
+    <select id="typeFilter">
+      <option value="">すべて</option>
+    </select>
+    <button id="startBtn">この条件で順路帳を開く</button>
+  </div>
+  <div id="top-bar-right">
+    <div id="status">CSV未読み込み</div>
+  </div>
+</div>
+
+<div id="main">
+  <div id="summary">件数: 0件</div>
+  <div id="list"></div>
+</div>
+
+<script>
+// ====== GitHub上のCSV URL（ここを書き換えて使ってください） ======
+const GITHUB_CSV_URL =
+  "https://raw.githubusercontent.com/あなたのユーザー名/regular_route/main/regular_route/junro.csv";
+
+// データ構造: { no, type, name, addr1, addr2, addr3, lat, lng, area, note }
+let entries = [];
+let filteredEntries = [];
+
+const fileInput    = document.getElementById("csvFile");
+const statusEl     = document.getElementById("status");
+const reloadBtn    = document.getElementById("reloadGitHub");
+const listEl       = document.getElementById("list");
+const summaryEl    = document.getElementById("summary");
+const areaFilter   = document.getElementById("areaFilter");
+const typeFilter   = document.getElementById("typeFilter");
+const startBtn     = document.getElementById("startBtn");
+
+// ========== GitHub から読み込み ==========
+async function loadCsvFromGitHub() {
+  if (!GITHUB_CSV_URL || GITHUB_CSV_URL.includes("あなたのユーザー名")) {
+    statusEl.textContent = "GITHUB_CSV_URL を自分のURLに書き換えてください。";
+    return;
+  }
+
+  statusEl.textContent = "GitHubからCSV読み込み中…";
+
+  try {
+    const res = await fetch(GITHUB_CSV_URL, { cache: "no-cache" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const text = await res.text(); // RawはUTF-8想定
+
+    const parsed = parseCsvToEntries(text);
+    if (parsed.length === 0) {
+      statusEl.textContent = "データがありません。";
+      entries = [];
+      applyFilterAndRender();
+      return;
+    }
+
+    entries = parsed;
+    statusEl.textContent = `GitHubから読み込み完了（${entries.length}件）`;
+    initFilters();
+    applyFilterAndRender();
+  } catch (e) {
+    console.error(e);
+    statusEl.textContent = "GitHub CSV の読み込みに失敗しました。URLや公開設定を確認してください。";
+  }
+}
+
+reloadBtn.addEventListener("click", () => {
+  loadCsvFromGitHub();
+});
+
+// ========== ローカルCSV読み込み（Shift_JIS想定） ==========
+fileInput.addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    const text = ev.target.result;
+    const parsed = parseCsvToEntries(text);
+    if (parsed.length === 0) {
+      alert("有効なデータがありませんでした。CSVの内容を確認してください。");
+      return;
+    }
+    entries = parsed;
+    statusEl.textContent = `ローカルCSVを読み込みました（${entries.length}件）`;
+    initFilters();
+    applyFilterAndRender();
+  };
+  reader.readAsText(file, "Shift_JIS");
+});
+
+// ========== シンプルCSVパーサ（セル内改行・ダブルクォート対応） ==========
+function parseCSV(text) {
+  const rows = [];
+  let row = [];
+  let field = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+
+    if (c === '"') {
+      if (inQuotes && text[i + 1] === '"') {
+        field += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (c === "," && !inQuotes) {
+      row.push(field);
+      field = "";
+    } else if ((c === "\n" || c === "\r") && !inQuotes) {
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = "";
+    } else {
+      field += c;
+    }
+  }
+
+  if (field.length > 0 || row.length > 0) {
+    row.push(field);
+    rows.push(row);
+  }
+
+  return rows;
+}
+
+/**
+ * CSV文字列 → entries[] に変換
+ * フォーマット:
+ *  購読者番号,新聞種類,名前,地名,番地,建物,緯度,経度,区域,備考
+ */
+function parseCsvToEntries(csvText) {
+  const rows = parseCSV(csvText);
+  const result = [];
+
+  rows.forEach((colsRaw, idx) => {
+    const cols = colsRaw.map(c => (c || "").trim());
+    if (cols.every(c => c === "")) return;
+
+    const joined = cols.join("");
+    if (
+      idx === 0 &&
+      /購読|番号|新聞|種類|名前|氏名|地名|番地|建物|住所|緯度|経度|区域|備考|area|note/i.test(joined)
+    ) {
+      return;
+    }
+
+    const no    = cols[0] || "";
+    const type  = cols[1] || "";
+    const name  = cols[2] || "";
+    const addr1 = cols[3] || "";
+    const addr2 = cols[4] || "";
+    const addr3 = cols[5] || "";
+
+    if (!no && !name) return;
+
+    let lat = null;
+    let lng = null;
+    if (cols.length >= 8) {
+      const latNum = Number((cols[6] || "").replace(/,/g, ""));
+      const lngNum = Number((cols[7] || "").replace(/,/g, ""));
+      if (!Number.isNaN(latNum) && !Number.isNaN(lngNum)) {
+        lat = latNum;
+        lng = lngNum;
+      }
+    }
+
+    const area = cols[8] || "";
+    const note = cols[9] || "";
+
+    result.push({ no, type, name, addr1, addr2, addr3, lat, lng, area, note });
+  });
+
+  return result;
+}
+
+// ========== フィルタUI初期化 ==========
+function initFilters() {
+  const areas = new Set();
+  const types = new Set();
+
+  entries.forEach(e => {
+    if (e.area) areas.add(e.area);
+    if (e.type) types.add(e.type);
+  });
+
+  areaFilter.innerHTML = '<option value="">すべて</option>';
+  Array.from(areas).sort().forEach(a => {
+    const opt = document.createElement("option");
+    opt.value = a;
+    opt.textContent = a;
+    areaFilter.appendChild(opt);
+  });
+
+  typeFilter.innerHTML = '<option value="">すべて</option>';
+  Array.from(types).sort().forEach(t => {
+    const opt = document.createElement("option");
+    opt.value = t;
+    opt.textContent = t;
+    typeFilter.appendChild(opt);
+  });
+}
+
+areaFilter.addEventListener("change", applyFilterAndRender);
+typeFilter.addEventListener("change", applyFilterAndRender);
+
+// ========== 絞り込み & 表示 ==========
+function applyFilterAndRender() {
+  const areaVal = areaFilter.value;
+  const typeVal = typeFilter.value;
+
+  filteredEntries = entries.filter(e => {
+    if (areaVal && e.area !== areaVal) return false;
+    if (typeVal && e.type !== typeVal) return false;
+    return true;
+  });
+
+  renderList();
+}
+
+function renderList() {
+  listEl.innerHTML = "";
+
+  summaryEl.textContent =
+    `件数: ${filteredEntries.length}件（全体: ${entries.length}件）`;
+
+  if (filteredEntries.length === 0) {
+    listEl.textContent = "該当するデータがありません。";
+    return;
+  }
+
+  filteredEntries.forEach(e => {
+    const row = document.createElement("div");
+    row.className = "row";
+
+    const header = document.createElement("div");
+    header.className = "row-header";
+
+    const noSpan = document.createElement("span");
+    noSpan.textContent = `No: ${e.no}`;
+    header.appendChild(noSpan);
+
+    if (e.area) {
+      const areaSpan = document.createElement("span");
+      areaSpan.className = "chip chip-area";
+      areaSpan.textContent = e.area;
+      header.appendChild(areaSpan);
+    }
+
+    if (e.type) {
+      const typeSpan = document.createElement("span");
+      typeSpan.className = "chip chip-type";
+      typeSpan.textContent = e.type;
+      header.appendChild(typeSpan);
+    }
+
+    const main = document.createElement("div");
+    main.className = "row-main";
+
+    const nameSpan = document.createElement("span");
+    nameSpan.className = "name";
+    nameSpan.textContent = e.name || "";
+    main.appendChild(nameSpan);
+
+    const addrSpan = document.createElement("span");
+    addrSpan.className = "addr";
+    addrSpan.textContent =
+      [e.addr1, e.addr2, e.addr3].filter(Boolean).join(" ");
+    main.appendChild(addrSpan);
+
+    row.appendChild(header);
+    row.appendChild(main);
+
+    if (e.note) {
+      const noteDiv = document.createElement("div");
+      noteDiv.className = "note";
+      noteDiv.textContent = `備考: ${e.note}`;
+      row.appendChild(noteDiv);
+    }
+
+    listEl.appendChild(row);
+  });
+}
+
+// ★★「この条件で順路帳を開く」ボタン → route.html に遷移 ★★
+startBtn.addEventListener("click", () => {
+  const areaVal = areaFilter.value || "";
+  const typeVal = typeFilter.value || "";
+  const params = new URLSearchParams();
+  if (areaVal) params.set("area", areaVal);
+  if (typeVal) params.set("type", typeVal);
+
+  // ここで route.html に飛ぶ（旧 index.html を route.html にリネームしておく）
+  const url = params.toString()
+    ? `route.html?${params.toString()}`
+    : `route.html`;
+  window.location.href = url;
+});
+
+// 初期：GitHubから読み込み
+window.addEventListener("load", () => {
+  loadCsvFromGitHub();
+});
+</script>
+</body>
+</html>
