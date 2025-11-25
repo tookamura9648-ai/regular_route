@@ -347,14 +347,12 @@ function parseCsvToEntries(csvText) {
 // ========== フィルタUI初期化 ==========
 function initFilters() {
   const areas = new Set();
-  const types = new Set();
-
   entries.forEach(e => {
     if (e.area) areas.add(e.area);
-    if (e.type) types.add(e.type);
   });
 
-  areaFilter.innerHTML = '<option value="">すべて</option>';
+  // 区域プルダウン
+  areaFilter.innerHTML = '<option value="">（区域：すべて）</option>';
   Array.from(areas).sort().forEach(a => {
     const opt = document.createElement("option");
     opt.value = a;
@@ -362,14 +360,14 @@ function initFilters() {
     areaFilter.appendChild(opt);
   });
 
-  typeFilter.innerHTML = '<option value="">すべて</option>';
-  Array.from(types).sort().forEach(t => {
-    const opt = document.createElement("option");
-    opt.value = t;
-    opt.textContent = t;
-    typeFilter.appendChild(opt);
-  });
+  // ★ 新聞種プルダウン：朝刊 / 夕刊 の2択
+  typeFilter.innerHTML = `
+    <option value="">（新聞種：指定なし）</option>
+    <option value="morning">朝刊（夕刊コードなし）</option>
+    <option value="evening">夕刊あり（よセ／日経セ／日経代）</option>
+  `;
 }
+
 
 areaFilter.addEventListener("change", applyFilterAndRender);
 typeFilter.addEventListener("change", applyFilterAndRender);
