@@ -372,19 +372,47 @@ function initFilters() {
 areaFilter.addEventListener("change", applyFilterAndRender);
 typeFilter.addEventListener("change", applyFilterAndRender);
 
-// ========== 絞り込み & 表示 ==========
+// 「よセ」「日経セ」「日経代」が含まれているかチェック → 夕刊あり
+function hasEvening(typeStr) {
+  const t = typeStr || "";
+  return /よセ|日経セ|日経代/.test(t);
+}
+
+// typeVal: "", "morning", "evening"
+// entryType: CSVの新聞種文字列（例: "読コン2\n報コン2\nよセ 日経セ" など）
+function matchTypeFilter(typeVal, entryType) {
+  if (!typeVal) return true;   // 指定なし（全件）
+
+  const evening = hasEvening(entryType);
+
+  if (typeVal === "evening") {
+    // 夕刊あり → よセ / 日経セ / 日経代 のどれかが含まれている
+    return evening;
+  }
+  if (typeVal === "morning") {
+    // 朝刊のみ → 夕刊コードが含まれていない
+    return !evening;
+  }
+  return true;
+}
+  
+
 function applyFilterAndRender() {
   const areaVal = areaFilter.value;
-  const typeVal = typeFilter.value;
+  const typeVal = typeFilter.value;   // "", "morning", "evening"
 
   filteredEntries = entries.filter(e => {
     if (areaVal && e.area !== areaVal) return false;
-    if (typeVal && e.type !== typeVal) return false;
+
+    // ★ 朝刊 / 夕刊の判定（「すべて」は普通の朝刊として扱われる）
+    if (!matchTypeFilter(typeVal, e.type || "")) return false;
+
     return true;
   });
 
   renderList();
 }
+
 
 function renderList() {
   listEl.innerHTML = "";
