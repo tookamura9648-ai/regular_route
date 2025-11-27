@@ -294,18 +294,36 @@ let routeFromHereLayer = null;
 let userLat = null;
 let userLng = null;
 
+function hasEvening(typeStr) {
+  const t = typeStr || "";
+  return /よセ|日経セ|日経代/.test(t);
+}
+
+function matchTypeFilter(typeVal, entryType) {
+  if (!typeVal) return true;
+  const evening = hasEvening(entryType);
+
+  if (typeVal === "evening") return evening;    // 夕刊あり
+  if (typeVal === "morning") return !evening;   // 朝刊のみ
+  return true;
+}
+  
 // ------- URLパラメータで絞り込みする関数 -------
 function filterByUrlParams(list) {
   const params = new URLSearchParams(location.search);
   const areaParam = params.get("area") || "";
-  const typeParam = params.get("type") || "";
+  const typeParam = params.get("type") || "";   // "", "morning", "evening"
 
   return list.filter(e => {
     if (areaParam && e.area !== areaParam) return false;
-    if (typeParam && e.type !== typeParam) return false;
+
+    // ★ URLの typeParam と実際の新聞種文字列を突き合わせる
+    if (!matchTypeFilter(typeParam, e.type || "")) return false;
+
     return true;
   });
 }
+
 
 // ====== GitHubから自動読み込み ======
 async function loadCsvFromGitHub() {
