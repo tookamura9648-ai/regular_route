@@ -3,221 +3,93 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-<title>順路帳＋地図（GitHub自動読み込み＆カードタップでルート）</title>
+<title>順路帳＋地図（カードタップでルート/HUD/次操作自動更新）</title>
 
-<!-- Leaflet（地図ライブラリ） -->
-<link
-  rel="stylesheet"
-  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-/>
-<script
-  src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js">
-</script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <style>
-  :root {
-    --top-bar-height: 52px;
-  }
-  body {
-    margin: 0;
-    background: #f2f2f2;
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    overflow: hidden;
-  }
+  :root { --top-bar-height: 52px; }
+  body { margin:0; background:#f2f2f2; font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; overflow:hidden; }
 
-  /* 上部バー（ステータス＆手動CSV） */
-  #top-bar {
-    height: var(--top-bar-height);
-    display: flex;
-    align-items: center;
-    padding: 4px 8px;
-    box-sizing: border-box;
-    background: #333;
-    color: #fff;
-    font-size: 13px;
-    gap: 8px;
+  #top-bar{
+    height:var(--top-bar-height); display:flex; align-items:center;
+    padding:4px 8px; box-sizing:border-box; background:#333; color:#fff; font-size:13px; gap:8px;
   }
-  #top-bar-left {
-    display: flex;
-    align-items: center;
-    gap: 6px;
+  #top-bar-left{ display:flex; align-items:center; gap:6px; }
+  #top-bar-right{ margin-left:auto; }
+  #top-bar button,#top-bar label{
+    display:inline-block; padding:4px 8px; border-radius:6px; background:#fff; color:#333;
+    font-weight:bold; font-size:12px; border:none; cursor:pointer; white-space:nowrap;
   }
-  #top-bar-right {
-    margin-left: auto;
-  }
-  #top-bar button,
-  #top-bar label {
-    display: inline-block;
-    padding: 4px 8px;
-    border-radius: 6px;
-    background: #fff;
-    color: #333;
-    font-weight: bold;
-    font-size: 12px;
-    border: none;
-    cursor: pointer;
-    white-space: nowrap;
-  }
-  #csvFile {
-    display: none;
-  }
-  #status {
-    font-size: 11px;
-    opacity: 0.9;
-  }
+  #csvFile{ display:none; }
+  #status{ font-size:11px; opacity:.9; }
 
-  /* カード横スクロール */
-  #container {
-    display: flex;
-    overflow-x: auto;
-    scroll-snap-type: x mandatory;
-    height: calc(100vh - var(--top-bar-height));
-    white-space: nowrap;
+  #container{
+    display:flex; overflow-x:auto; scroll-snap-type:x mandatory;
+    height:calc(100vh - var(--top-bar-height)); white-space:nowrap;
   }
+  .group{ display:flex; flex-direction:row; flex:0 0 100vw; scroll-snap-align:start; padding:6px; box-sizing:border-box; }
+  .card{
+    background:#fff; margin:4px; flex:1; border-radius:14px; padding:6px; box-sizing:border-box;
+    border:solid 2px #444; display:flex; flex-direction:column; align-items:stretch; cursor:pointer; touch-action:manipulation;
+  }
+  .card-top{
+    width:100%; display:flex; flex-direction:column; font-size:1.1rem; line-height:1.2; margin-bottom:4px; white-space:pre-line;
+    background:rgba(0,0,0,.9); color:#fff; padding:4px 6px; border-radius:6px;
+  }
+  .card-no{ font-weight:bold; color:#fff; }
+  .card-type{ font-size:.95rem; color:#ddd; }
+  .card-note{ font-size:.85rem; color:#ccc; margin-top:2px; line-height:1.1; }
 
-  /* 1ページ＝5件分 */
-  .group {
-    display: flex;
-    flex-direction: row;
-    flex: 0 0 100vw;
-    scroll-snap-align: start;
-    padding: 6px;
-    box-sizing: border-box;
-  }
+  .card-main{ flex:1; display:flex; justify-content:center; gap:4px; overflow:hidden; }
+  .vertical-text{ writing-mode:vertical-rl; text-orientation:mixed; white-space:pre-line; word-break:break-all; }
+  .name-text{ font-size:1.8rem; font-weight:bold; }
+  .addr-text{ font-size:1.2rem; opacity:.9; text-orientation:upright; }
 
-  /* 1件のカード */
-  .card {
-    background: #ffffff;
-    margin: 4px;
-    flex: 1;
-    border-radius: 14px;
-    padding: 6px;
-    box-sizing: border-box;
-    border: solid 2px #444;
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    cursor: pointer;
-    touch-action: manipulation;
-  }
-
-  /* 上部：購読者番号 & 新聞種類 & 備考（横書き） */
-  .card-top {
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    font-size: 1.1rem;
-    line-height: 1.2;
-    margin-bottom: 4px;
-    white-space: pre-line;
-
-    background: rgba(0,0,0,0.9);  /* 黒背景 */
-    color: #fff;                  /* 白文字 */
-    padding: 4px 6px;
-    border-radius: 6px;
-  }
-  .card-no {
-    font-weight: bold;
-    color: #fff;
-  }
-  .card-type {
-    font-size: 0.95rem;
-    color: #ddd;
-  }
-  .card-note {
-    font-size: 0.85rem;
-    color: #ccc;
-    margin-top: 2px;
-    line-height: 1.1;
-  }
-
-  /* 下部：名前＋住所（縦書き） */
-  .card-main {
-    flex: 1;
-    display: flex;
-    justify-content: center;
-    gap: 4px;
-    overflow: hidden;
-  }
-
-  .vertical-text {
-    writing-mode: vertical-rl;
-    text-orientation: mixed;
-    white-space: pre-line;
-    word-break: break-all;
-  }
-
-  .name-text {
-    font-size: 1.8rem;
-    font-weight: bold;
-  }
-
-  /* 住所3分割は名前より少し小さめ、数字は縦書き */
-  .addr-text {
-    font-size: 1.2rem;
-    opacity: 0.9;
-    text-orientation: upright;
-  }
-
-  #container::-webkit-scrollbar {
-    height: 4px;
-  }
-  #container::-webkit-scrollbar-thumb {
-    background: #999;
-    border-radius: 2px;
-  }
+  #container::-webkit-scrollbar{ height:4px; }
+  #container::-webkit-scrollbar-thumb{ background:#999; border-radius:2px; }
 
   /* 地図オーバーレイ */
-  #mapOverlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.6);
-    display: none;
-    z-index: 1000;
+  #mapOverlay{ position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; z-index:1000; }
+  #mapPanel{
+    position:absolute; top:5%; left:5%; width:90%; height:90%;
+    background:#fff; border-radius:14px; display:flex; flex-direction:column; overflow:hidden;
   }
-  #mapPanel {
-    position: absolute;
-    top: 5%;
-    left: 5%;
-    width: 90%;
-    height: 90%;
-    background: #fff;
-    border-radius: 14px;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
+  #mapHeader{
+    height:44px; display:flex; align-items:center; justify-content:space-between;
+    padding:0 8px; box-sizing:border-box; background:#333; color:#fff; font-size:13px; gap:6px;
   }
-  #mapHeader {
-    height: 44px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 8px;
-    box-sizing: border-box;
-    background: #333;
-    color: #fff;
-    font-size: 13px;
-    gap: 6px;
+  #mapTitle{ flex:1; padding-right:8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  /* HUD操作ボタン */
+  .hudBtn{
+    border:none; background:#fff; color:#333; border-radius:999px; padding:4px 10px;
+    font-weight:900; cursor:pointer; white-space:nowrap;
   }
-  #mapTitle {
-    flex: 1;
-    padding-right: 8px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+  #mapClose{ border:none; background:#fff; color:#333; border-radius:999px; padding:4px 10px; font-weight:bold; cursor:pointer; }
+
+  /* HUD帯 */
+  #hudBanner{
+    display:none;
+    padding:12px 14px;
+    font-size:22px;
+    font-weight:900;
+    background:#111;
+    color:#fff;
+    line-height:1.15;
+    letter-spacing:.5px;
+    border-bottom:2px solid #000;
   }
-  #mapClose {
-    border: none;
-    background: #fff;
-    color: #333;
-    border-radius: 999px;
-    padding: 4px 10px;
-    font-weight: bold;
-    cursor: pointer;
+  #hudBanner.warn{ background:#b00020; }
+  #hudSub{
+    margin-top:4px;
+    font-size:12px;
+    opacity:.9;
+    font-weight:700;
   }
-  #map {
-    flex: 1;
-  }
+
+  #map{ flex:1; }
 </style>
 </head>
 <body>
@@ -235,13 +107,21 @@
 
 <div id="container"></div>
 
-<!-- 地図オーバーレイ -->
 <div id="mapOverlay">
   <div id="mapPanel">
     <div id="mapHeader">
       <div id="mapTitle">地図</div>
+      <button id="hudToggle" class="hudBtn">HUD ON</button>
+      <button id="prevTurn" class="hudBtn">◀ 前</button>
+      <button id="nextTurn" class="hudBtn">次 ▶</button>
       <button id="mapClose">閉じる</button>
     </div>
+
+    <div id="hudBanner">
+      <div id="hudMain">（次の操作）</div>
+      <div id="hudSub"></div>
+    </div>
+
     <div id="map"></div>
   </div>
 </div>
@@ -252,38 +132,12 @@ const GITHUB_CSV_URL =
   "https://raw.githubusercontent.com/tookamura9648-ai/regular_route/main/regular_route/住所録2025.csv";
 
 // { no, type, name, addr1, addr2, addr3, lat, lng, area, note }
-let entries = [
-  // ダミーデータ（絞り込みテスト用）
-  {
-    no: "A001",
-    type: "朝刊",
-    name: "山田太郎",
-    addr1: "滋賀県草津市◯◯",
-    addr2: "1-2-3",
-    addr3: "",
-    lat: 35.003,
-    lng: 135.87,
-    area: "南部",
-    note: ""
-  },
-  {
-    no: "A002",
-    type: "朝夕刊",
-    name: "佐藤花子",
-    addr1: "滋賀県草津市△△",
-    addr2: "5-6-7",
-    addr3: "ハイツ101",
-    lat: 35.005,
-    lng: 135.872,
-    area: "北部",
-    note: "犬に注意"
-  }
-];
+let entries = [];
 
-const fileInput   = document.getElementById("csvFile");
-const statusEl    = document.getElementById("status");
-const container   = document.getElementById("container");
-const reloadBtn   = document.getElementById("reloadGitHub");
+const fileInput = document.getElementById("csvFile");
+const statusEl  = document.getElementById("status");
+const container = document.getElementById("container");
+const reloadBtn = document.getElementById("reloadGitHub");
 
 // 地図関連
 let map;
@@ -294,444 +148,506 @@ let routeFromHereLayer = null;
 let userLat = null;
 let userLng = null;
 
-function hasEvening(typeStr) {
-  const t = typeStr || "";
-  return /よセ|日経セ|日経代/.test(t);
-}
+// HUD/UI
+const mapOverlay = document.getElementById("mapOverlay");
+const mapTitle   = document.getElementById("mapTitle");
+const mapClose   = document.getElementById("mapClose");
+const hudToggle  = document.getElementById("hudToggle");
+const prevTurnBtn= document.getElementById("prevTurn");
+const nextTurnBtn= document.getElementById("nextTurn");
+const hudBanner  = document.getElementById("hudBanner");
+const hudMainEl  = document.getElementById("hudMain");
+const hudSubEl   = document.getElementById("hudSub");
 
-function matchTypeFilter(typeVal, entryType) {
+let hudOn = true;
+
+// 次操作管理（ここが今回の“自動更新”の核）
+let maneuverList = [];     // 曲がり角だけ抽出した steps の配列
+let activeIdx = 0;         // maneuverList の現在インデックス
+let state = "idle";        // "idle" | "approaching" | "arrived"
+let lastDist = null;
+let lastVibeIdx = -1;
+
+// 次操作地点マーカー（任意）
+let nextMarker = null;
+
+// ====== 新聞種フィルタ（既存のまま） ======
+function hasEvening(typeStr){ return /よセ|日経セ|日経代/.test(typeStr || ""); }
+function matchTypeFilter(typeVal, entryType){
   if (!typeVal) return true;
   const evening = hasEvening(entryType);
-
-  if (typeVal === "evening") return evening;    // 夕刊あり
-  if (typeVal === "morning") return !evening;   // 朝刊のみ
+  if (typeVal === "evening") return evening;
+  if (typeVal === "morning") return !evening;
   return true;
 }
-  
-// ------- URLパラメータで絞り込みする関数 -------
-function filterByUrlParams(list) {
+function filterByUrlParams(list){
   const params = new URLSearchParams(location.search);
   const areaParam = params.get("area") || "";
-  const typeParam = params.get("type") || "";   // "", "morning", "evening"
-
+  const typeParam = params.get("type") || "";
   return list.filter(e => {
     if (areaParam && e.area !== areaParam) return false;
-
-    // ★ URLの typeParam と実際の新聞種文字列を突き合わせる
     if (!matchTypeFilter(typeParam, e.type || "")) return false;
-
     return true;
   });
 }
 
-
-// ====== GitHubから自動読み込み ======
-async function loadCsvFromGitHub() {
-  if (!GITHUB_CSV_URL || GITHUB_CSV_URL.includes("ユーザー名")) {
-    statusEl.textContent = "GitHub CSV URL が未設定です。コード内の GITHUB_CSV_URL を書き換えてください。";
-    renderCards();
-    return;
-  }
-
+// ====== GitHub/ローカルCSV ======
+async function loadCsvFromGitHub(){
   statusEl.textContent = "GitHub からCSVを読み込み中…";
-
-  try {
-    const res = await fetch(GITHUB_CSV_URL, { cache: "no-cache" });
+  try{
+    const res = await fetch(GITHUB_CSV_URL, { cache:"no-cache" });
     if (!res.ok) throw new Error("HTTP " + res.status);
-
-    const text = await res.text(); // GitHub Raw は UTF-8
+    const text = await res.text();
     const parsed = parseCsvToEntries(text);
-    if (parsed.length === 0) {
-      statusEl.textContent = "GitHub CSV は読み込めましたが、有効な行がありません。";
-      renderCards();
-      return;
-    }
-
-    entries = parsed;  // 全件を保持
+    entries = parsed;
     statusEl.textContent = `GitHub から読み込み完了（${entries.length}件）`;
-    renderCards();     // ★ この中でURLパラメータに応じて絞り込む
-  } catch (err) {
-    console.error("GitHub CSV 読み込みエラー:", err);
-    statusEl.textContent = "GitHub CSV の読み込みに失敗しました。URLや公開設定を確認してください。ダミーデータを表示中。";
+    renderCards();
+  }catch(e){
+    console.error(e);
+    statusEl.textContent = "GitHub CSV 読み込み失敗。ローカルCSVを使ってください。";
     renderCards();
   }
 }
+reloadBtn.addEventListener("click", loadCsvFromGitHub);
 
-reloadBtn.addEventListener("click", () => {
-  loadCsvFromGitHub();
-});
-
-// ===== ローカルCSV 読み込み（Excel標準の Shift_JIS を想定） =====
-fileInput.addEventListener("change", (e) => {
+fileInput.addEventListener("change",(e)=>{
   const file = e.target.files[0];
   if (!file) return;
-
   const reader = new FileReader();
-  reader.onload = (ev) => {
+  reader.onload = (ev)=>{
     const text = ev.target.result;
     const parsed = parseCsvToEntries(text);
-    if (parsed.length === 0) {
-      alert("有効なデータがありませんでした。CSVの内容を確認してください。");
-      return;
-    }
-    entries = parsed; // ここも全件保持
+    if (parsed.length === 0) { alert("有効なデータがありません。CSVを確認してください。"); return; }
+    entries = parsed;
     statusEl.textContent = `ローカルCSVを読み込みました（${entries.length}件）`;
-    renderCards();    // ★ URLパラメータに応じて表示
+    renderCards();
   };
   reader.readAsText(file, "Shift_JIS");
 });
 
-/* ---------- CSVパース系 ---------- */
-function parseCSV(text) {
-  const rows = [];
-  let row = [];
-  let field = "";
-  let inQuotes = false;
-
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-
-    if (c === '"') {
-      if (inQuotes && text[i + 1] === '"') {
-        field += '"';
-        i++;
-      } else {
-        inQuotes = !inQuotes;
-      }
-    } else if (c === "," && !inQuotes) {
-      row.push(field);
-      field = "";
-    } else if ((c === "\n" || c === "\r") && !inQuotes) {
-      if (c === "\r" && text[i + 1] === "\n") i++;
-      row.push(field);
-      rows.push(row);
-      row = [];
-      field = "";
-    } else {
+function parseCSV(text){
+  const rows=[]; let row=[]; let field=""; let inQuotes=false;
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(c === '"'){
+      if(inQuotes && text[i+1] === '"'){ field+='"'; i++; }
+      else inQuotes = !inQuotes;
+    }else if(c === "," && !inQuotes){
+      row.push(field); field="";
+    }else if((c === "\n" || c === "\r") && !inQuotes){
+      if(c === "\r" && text[i+1] === "\n") i++;
+      row.push(field); rows.push(row);
+      row=[]; field="";
+    }else{
       field += c;
     }
   }
-
-  if (field.length > 0 || row.length > 0) {
-    row.push(field);
-    rows.push(row);
-  }
-
+  if(field.length>0 || row.length>0){ row.push(field); rows.push(row); }
   return rows;
 }
 
-function parseCsvToEntries(csvText) {
-  const rows = parseCSV(csvText);
-  const result = [];
-
-  rows.forEach((colsRaw, idx) => {
-    const cols = colsRaw.map(c => (c || "").trim());
-    if (cols.every(c => c === "")) return;
-
+function parseCsvToEntries(csvText){
+  const rows=parseCSV(csvText); const result=[];
+  rows.forEach((colsRaw, idx)=>{
+    const cols = colsRaw.map(c => (c||"").trim());
+    if(cols.every(c=>c==="")) return;
     const joined = cols.join("");
-    if (
-      idx === 0 &&
-      /購読|番号|新聞|種類|名前|氏名|地名|番地|建物|住所|緯度|経度|区域|備考|area|note/i.test(joined)
-    ) {
-      return;
+    if(idx===0 && /購読|番号|新聞|種類|名前|氏名|地名|番地|建物|住所|緯度|経度|区域|備考|area|note/i.test(joined)) return;
+
+    const no=cols[0]||"", type=cols[1]||"", name=cols[2]||"";
+    const addr1=cols[3]||"", addr2=cols[4]||"", addr3=cols[5]||"";
+    if(!no && !name) return;
+
+    let lat=null,lng=null;
+    if(cols.length>=8){
+      const latNum=Number((cols[6]||"").replace(/,/g,""));
+      const lngNum=Number((cols[7]||"").replace(/,/g,""));
+      if(!Number.isNaN(latNum) && !Number.isNaN(lngNum)){ lat=latNum; lng=lngNum; }
     }
-
-    const no    = cols[0] || "";
-    const type  = cols[1] || "";
-    const name  = cols[2] || "";
-    const addr1 = cols[3] || "";
-    const addr2 = cols[4] || "";
-    const addr3 = cols[5] || "";
-
-    if (!no && !name) return;
-
-    let lat = null;
-    let lng = null;
-    if (cols.length >= 8) {
-      const latNum = Number((cols[6] || "").replace(/,/g, ""));
-      const lngNum = Number((cols[7] || "").replace(/,/g, ""));
-      if (!Number.isNaN(latNum) && !Number.isNaN(lngNum)) {
-        lat = latNum;
-        lng = lngNum;
-      }
-    }
-
-    const area = cols[8] || "";
-    const note = cols[9] || "";
-
-    result.push({ no, type, name, addr1, addr2, addr3, lat, lng, area, note });
+    const area=cols[8]||"", note=cols[9]||"";
+    result.push({ no,type,name,addr1,addr2,addr3,lat,lng,area,note });
   });
-
   return result;
 }
 
-/* ---------- 5件ずつ分割 ---------- */
-function chunk(array, size) {
-  const result = [];
-  for (let i = 0; i < array.length; i += size) {
-    result.push(array.slice(i, i + size));
-  }
-  return result;
+function chunk(array,size){
+  const out=[];
+  for(let i=0;i<array.length;i+=size) out.push(array.slice(i,i+size));
+  return out;
 }
 
-/* ---------- 順路カード描画 ---------- */
-function renderCards() {
-  container.innerHTML = "";
-
-  // ★ URLパラメータで絞り込んだ結果だけを表示
+function renderCards(){
+  container.innerHTML="";
   const viewEntries = filterByUrlParams(entries);
   const groups = chunk(viewEntries, 5);
 
-  groups.forEach(groupData => {
-    const group = document.createElement("div");
-    group.className = "group";
+  groups.forEach(groupData=>{
+    const group=document.createElement("div");
+    group.className="group";
 
-    groupData.forEach(item => {
-      const card = document.createElement("div");
-      card.className = "card";
+    groupData.forEach(item=>{
+      const card=document.createElement("div");
+      card.className="card";
+      card.dataset.no=item.no||"";
+      card.dataset.type=item.type||"";
+      card.dataset.name=item.name||"";
+      card.dataset.addr1=item.addr1||"";
+      card.dataset.addr2=item.addr2||"";
+      card.dataset.addr3=item.addr3||"";
+      if(item.lat!=null && item.lng!=null){ card.dataset.lat=item.lat; card.dataset.lng=item.lng; }
+      card.dataset.area=item.area||"";
+      card.dataset.note=item.note||"";
 
-      card.dataset.no    = item.no || "";
-      card.dataset.type  = item.type || "";
-      card.dataset.name  = item.name || "";
-      card.dataset.addr1 = item.addr1 || "";
-      card.dataset.addr2 = item.addr2 || "";
-      card.dataset.addr3 = item.addr3 || "";
-      if (item.lat != null && item.lng != null) {
-        card.dataset.lat  = item.lat;
-        card.dataset.lng  = item.lng;
-      }
-      card.dataset.area = item.area || "";
-      card.dataset.note = item.note || "";
-
-      const top = document.createElement("div");
-      top.className = "card-top";
-
-      const noEl = document.createElement("div");
-      noEl.className = "card-no";
-      noEl.textContent = item.no || "";
-
-      const typeEl = document.createElement("div");
-      typeEl.className = "card-type";
-      typeEl.textContent = item.type || "";
-
-      top.appendChild(noEl);
-      top.appendChild(typeEl);
-
-      if (item.note) {
-        const noteEl = document.createElement("div");
-        noteEl.className = "card-note";
-        noteEl.textContent = item.note;
+      const top=document.createElement("div");
+      top.className="card-top";
+      const noEl=document.createElement("div"); noEl.className="card-no"; noEl.textContent=item.no||"";
+      const typeEl=document.createElement("div"); typeEl.className="card-type"; typeEl.textContent=item.type||"";
+      top.appendChild(noEl); top.appendChild(typeEl);
+      if(item.note){
+        const noteEl=document.createElement("div"); noteEl.className="card-note"; noteEl.textContent=item.note;
         top.appendChild(noteEl);
       }
 
-      const main = document.createElement("div");
-      main.className = "card-main";
-
-      const nameEl = document.createElement("div");
-      nameEl.className = "vertical-text name-text";
-      nameEl.textContent = item.name || "";
-
-      const addr1El = document.createElement("div");
-      addr1El.className = "vertical-text addr-text";
-      addr1El.textContent = item.addr1 || "";
-
-      const addr2El = document.createElement("div");
-      addr2El.className = "vertical-text addr-text";
-      addr2El.textContent = item.addr2 || "";
-
-      const addr3El = document.createElement("div");
-      addr3El.className = "vertical-text addr-text";
-      addr3El.textContent = item.addr3 || "";
-
+      const main=document.createElement("div"); main.className="card-main";
+      const nameEl=document.createElement("div"); nameEl.className="vertical-text name-text"; nameEl.textContent=item.name||"";
+      const addr1El=document.createElement("div"); addr1El.className="vertical-text addr-text"; addr1El.textContent=item.addr1||"";
+      const addr2El=document.createElement("div"); addr2El.className="vertical-text addr-text"; addr2El.textContent=item.addr2||"";
+      const addr3El=document.createElement("div"); addr3El.className="vertical-text addr-text"; addr3El.textContent=item.addr3||"";
       main.appendChild(nameEl);
-      if (item.addr3) main.appendChild(addr3El);
-      if (item.addr2) main.appendChild(addr2El);
-      if (item.addr1) main.appendChild(addr1El);
+      if(item.addr3) main.appendChild(addr3El);
+      if(item.addr2) main.appendChild(addr2El);
+      if(item.addr1) main.appendChild(addr1El);
 
-      card.appendChild(top);
-      card.appendChild(main);
-
+      card.appendChild(top); card.appendChild(main);
       card.addEventListener("click", onCardClick);
-
       group.appendChild(card);
     });
 
-    for (let i = groupData.length; i < 5; i++) {
-      const empty = document.createElement("div");
-      empty.className = "card";
-      empty.style.visibility = "hidden";
+    for(let i=groupData.length;i<5;i++){
+      const empty=document.createElement("div");
+      empty.className="card";
+      empty.style.visibility="hidden";
       group.appendChild(empty);
     }
-
     container.appendChild(group);
   });
 }
 
-/* ---------- 地図＆ルートまわり ---------- */
-const mapOverlay = document.getElementById("mapOverlay");
-const mapTitle   = document.getElementById("mapTitle");
-const mapClose   = document.getElementById("mapClose");
+// ====== 地図起動 ======
+mapClose.addEventListener("click", ()=>{ mapOverlay.style.display="none"; });
 
-mapClose.addEventListener("click", () => {
-  mapOverlay.style.display = "none";
+hudToggle.addEventListener("click", ()=>{
+  hudOn = !hudOn;
+  hudToggle.textContent = hudOn ? "HUD ON" : "HUD OFF";
+  if(!hudOn){ hudBanner.style.display="none"; hudBanner.classList.remove("warn"); }
+  else { hudBanner.style.display="block"; }
 });
 
-function onCardClick(e) {
-  const card = e.currentTarget;
-  const no    = card.dataset.no   || "";
-  const name  = card.dataset.name || "";
-  const addr1 = card.dataset.addr1 || "";
-  const addr2 = card.dataset.addr2 || "";
-  const addr3 = card.dataset.addr3 || "";
+prevTurnBtn.addEventListener("click", ()=>{
+  if(maneuverList.length === 0) return;
+  activeIdx = Math.max(0, activeIdx - 1);
+  resetAutoState();
+  renderHudOnce();
+});
 
-  const labelMain = `${no} ${name}`.trim();
-  const labelAddr = [addr1, addr2, addr3].filter(Boolean).join(" ");
-  const label = (labelMain || labelAddr || "地図").slice(0, 40);
+nextTurnBtn.addEventListener("click", ()=>{
+  if(maneuverList.length === 0) return;
+  activeIdx = Math.min(maneuverList.length - 1, activeIdx + 1);
+  resetAutoState();
+  renderHudOnce();
+});
+
+function onCardClick(e){
+  const card = e.currentTarget;
+  const no = card.dataset.no || "";
+  const name = card.dataset.name || "";
+  const addr = [card.dataset.addr1, card.dataset.addr2, card.dataset.addr3].filter(Boolean).join(" ");
+  const label = (`${no} ${name}`.trim() || addr || "地図").slice(0,40);
 
   const lat = card.dataset.lat ? Number(card.dataset.lat) : null;
   const lng = card.dataset.lng ? Number(card.dataset.lng) : null;
-
-  if (lat == null || lng == null || Number.isNaN(lat) || Number.isNaN(lng)) {
-    alert("この順路には緯度・経度が設定されていません。\nCSVに「購読者番号,新聞種類,名前,地名,番地,建物,緯度,経度,区域,備考」の形式で設定してください。");
+  if(lat==null || lng==null || Number.isNaN(lat) || Number.isNaN(lng)){
+    alert("この順路には緯度・経度がありません。CSVに緯度/経度を入れてください。");
     return;
   }
-
   openMapAndRoute(label, lat, lng);
 }
 
-function openMapAndRoute(label, lat, lng) {
+function openMapAndRoute(label, lat, lng){
   mapTitle.textContent = label;
-  mapOverlay.style.display = "block";
+  mapOverlay.style.display="block";
 
-  if (!map) {
-    initMap(lat, lng);
-  } else {
-    map.setView([lat, lng], 17);
-  }
+  if(!map) initMap(lat,lng);
+  else map.setView([lat,lng], 17);
 
-  if (!destMarker) {
-    destMarker = L.marker([lat, lng]).addTo(map);
-  } else {
-    destMarker.setLatLng([lat, lng]);
-  }
+  if(!destMarker) destMarker = L.marker([lat,lng]).addTo(map);
+  else destMarker.setLatLng([lat,lng]);
 
-  if (routeFromHereLayer) {
-    map.removeLayer(routeFromHereLayer);
-    routeFromHereLayer = null;
-  }
+  if(routeFromHereLayer){ map.removeLayer(routeFromHereLayer); routeFromHereLayer=null; }
+  if(nextMarker){ map.removeLayer(nextMarker); nextMarker=null; }
 
-  setTimeout(() => {
-    map.invalidateSize();
-  }, 200);
+  // 状態初期化
+  maneuverList = [];
+  activeIdx = 0;
+  resetAutoState();
+  hudBanner.style.display = hudOn ? "block" : "none";
+  hudMainEl.textContent = "ルート取得中…";
+  hudSubEl.textContent = "";
 
+  setTimeout(()=> map.invalidateSize(), 200);
   routeFromHereTo({ lat, lng });
 }
 
-function initMap(lat, lng) {
+function initMap(lat,lng){
   map = L.map("map");
-
-  L.tileLayer(
-    "https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png",
-    {
-      attribution: "地理院タイル",
-      maxZoom: 18,
-      minZoom: 5
-    }
-  ).addTo(map);
-
-  map.setView([lat, lng], 17);
-
+  L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png",{
+    attribution:"地理院タイル", maxZoom:18, minZoom:5
+  }).addTo(map);
+  map.setView([lat,lng],17);
   startGeoWatch();
 }
 
-function startGeoWatch() {
-  if (!navigator.geolocation) {
-    console.warn("Geolocation がサポートされていません。");
-    return;
-  }
-  if (geoWatchId != null) return;
+function startGeoWatch(){
+  if(!navigator.geolocation){ console.warn("Geolocation未対応"); return; }
+  if(geoWatchId!=null) return;
 
   geoWatchId = navigator.geolocation.watchPosition(
-    pos => {
+    pos=>{
       userLat = pos.coords.latitude;
       userLng = pos.coords.longitude;
       const latlng = [userLat, userLng];
 
-      if (!userMarker) {
-        userMarker = L.circleMarker(latlng, {
-          radius: 8
-        }).addTo(map);
-      } else {
-        userMarker.setLatLng(latlng);
-      }
+      if(!userMarker) userMarker = L.circleMarker(latlng,{ radius:8 }).addTo(map);
+      else userMarker.setLatLng(latlng);
+
+      // ★ GPS更新ごとに「次の操作」を自動更新
+      tickAutoManeuver();
     },
-    err => {
-      console.warn("現在地取得に失敗:", err);
-    },
-    {
-      enableHighAccuracy: true,
-      maximumAge: 10000,
-      timeout: 20000
-    }
+    err=>{ console.warn("現在地取得失敗:", err); },
+    { enableHighAccuracy:true, maximumAge:10000, timeout:20000 }
   );
 }
 
-async function routeBetween(A, B) {
-  const candidates = ['bike', 'bicycle', 'cycling', 'foot', 'walking', 'car', 'driving'];
-  let lastErr = 'unknown';
+// ====== ルート取得（OSRM steps=true / バイク） ======
+async function routeWithSteps(A,B){
+  const profiles = ["bike","bicycle","cycling"];
+  let lastErr="unknown";
 
-  for (const profile of candidates) {
+  for(const profile of profiles){
     const url =
       `https://router.project-osrm.org/route/v1/${profile}/` +
       `${A.lng},${A.lat};${B.lng},${B.lat}` +
-      `?overview=full&geometries=geojson&alternatives=false&steps=false`;
-    try {
+      `?overview=full&geometries=geojson&alternatives=false&steps=true`;
+    try{
       const res = await fetch(url);
       const json = await res.json();
-      if (json.code === "Ok") {
-        return json.routes[0].geometry.coordinates;
+      if(json.code==="Ok"){
+        const route=json.routes[0];
+        const steps=route.legs?.[0]?.steps ?? [];
+        return { profile, geometry: route.geometry.coordinates, steps, route };
       }
       lastErr = json.code || "OSRM error";
-    } catch (e) {
+    }catch(e){
       lastErr = e.message;
     }
-    await new Promise(r => setTimeout(r, 250));
   }
-  throw new Error(`ルート取得失敗（tried=${candidates.join("/")}, last="${lastErr}"）`);
+  throw new Error(`ルート取得失敗: ${lastErr}`);
 }
 
-async function routeFromHereTo(target) {
-  if (userLat == null || userLng == null) {
-    alert("現在地がまだ取得できていません。\n位置情報の許可とGPSの状態を確認して、少し待ってから再度タップしてください。");
+// 曲がり角だけ抽出（右左折/分岐/ラウンドアバウト系）
+function buildManeuverList(steps){
+  const interesting = new Set([
+    "turn","fork",
+    "roundabout","rotary",
+    "exit roundabout","exit rotary"
+  ]);
+  const list = [];
+  for(const s of steps){
+    const t = s?.maneuver?.type;
+    if(interesting.has(t)) list.push(s);
+  }
+  return list;
+}
+
+function formatManeuver(step){
+  const t = step.maneuver.type;
+  const m = step.maneuver.modifier || "";
+
+  if(t==="roundabout" || t==="rotary" || t==="exit roundabout" || t==="exit rotary"){
+    return "⟳ ラウンドアバウト";
+  }
+  if(t==="turn" || t==="fork"){
+    if(m.includes("slight right")) return "↗ ゆるく右";
+    if(m.includes("slight left"))  return "↖ ゆるく左";
+    if(m.includes("right")) return "➡ 右折";
+    if(m.includes("left"))  return "⬅ 左折";
+    if(m.includes("straight")) return "⬆ 直進";
+    return "↩ 進行方向変更";
+  }
+  return "次の操作";
+}
+
+// 距離計算（m）
+function haversineMeters(a,b){
+  const R=6371000;
+  const toRad=(d)=>d*Math.PI/180;
+  const dLat=toRad(b.lat-a.lat);
+  const dLng=toRad(b.lng-a.lng);
+  const lat1=toRad(a.lat), lat2=toRad(b.lat);
+  const x = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLng/2)**2;
+  return 2*R*Math.asin(Math.min(1,Math.sqrt(x)));
+}
+
+function resetAutoState(){
+  state="idle";
+  lastDist=null;
+}
+
+// HUDを1回描画（手動前/次の押下直後など）
+function renderHudOnce(){
+  if(!hudOn) return;
+  if(maneuverList.length===0){
+    hudBanner.style.display="block";
+    hudMainEl.textContent="（曲がり角なし）";
+    hudSubEl.textContent="";
     return;
   }
-  const A = { lat: userLat, lng: userLng };
+  const step = maneuverList[activeIdx];
+  const label = formatManeuver(step);
+  const [lon,lat] = step.maneuver.location;
+  hudMainEl.textContent = label + "（距離計算中）";
+  hudSubEl.textContent = `操作 ${activeIdx+1}/${maneuverList.length}`;
+  if(map){
+    if(!nextMarker) nextMarker = L.marker([lat,lon]).addTo(map);
+    else nextMarker.setLatLng([lat,lon]);
+  }
+}
+
+// 自動更新の心臓部：距離の遷移で「通過→次へ」
+function tickAutoManeuver(){
+  if(!hudOn) return;
+  if(userLat==null || userLng==null) return;
+  if(maneuverList.length===0) return;
+  if(activeIdx >= maneuverList.length) return;
+
+  const SHOW_AT   = 150; // 表示開始（バイクなら少し早めでもOK）
+  const ARRIVE_AT = 25;  // ここに入ったら「到達」扱い
+  const LEAVE_AT  = 45;  // 到達後、ここ以上に離れたら「通過」扱い（次へ）
+  const WARN_AT   = 40;  // 強調
+  const VIBE_AT   = 18;  // バイブ（任意）
+
+  const user = { lat:userLat, lng:userLng };
+  const step = maneuverList[activeIdx];
+  const [lon, lat] = step.maneuver.location;
+  const dist = Math.round(haversineMeters(user, { lat, lng:lon }));
+
+  // 表示制御
+  if(dist > SHOW_AT){
+    hudBanner.style.display="none";
+    hudBanner.classList.remove("warn");
+    lastDist = dist;
+    return;
+  }
+
+  hudBanner.style.display="block";
+  const label = formatManeuver(step);
+  hudMainEl.textContent = `${label}（${dist}m）`;
+  hudSubEl.textContent = `操作 ${activeIdx+1}/${maneuverList.length}`;
+
+  // 強調
+  if(dist <= WARN_AT) hudBanner.classList.add("warn");
+  else hudBanner.classList.remove("warn");
+
+  // 次操作地点マーカー
+  if(map){
+    if(!nextMarker) nextMarker = L.marker([lat,lon]).addTo(map);
+    else nextMarker.setLatLng([lat,lon]);
+  }
+
+  // バイブ（同じ操作で1回だけ）
+  if(dist <= VIBE_AT && navigator.vibrate && lastVibeIdx !== activeIdx){
+    navigator.vibrate([60,60,60]);
+    lastVibeIdx = activeIdx;
+  }
+
+  // ---- 自動更新（通過判定）----
+  // idle -> approaching
+  if(state === "idle"){
+    state = "approaching";
+  }
+
+  // approaching -> arrived
+  if(state === "approaching" && dist <= ARRIVE_AT){
+    state = "arrived";
+  }
+
+  // arrived -> (離れたら) 次へ
+  if(state === "arrived" && dist >= LEAVE_AT){
+    // 次へ進む（最後ならそのまま）
+    if(activeIdx < maneuverList.length - 1){
+      activeIdx++;
+      resetAutoState();
+      // 次の操作が変わったので、バイブフラグは次用に（lastVibeIdxはそのままでOK）
+      renderHudOnce();
+      return;
+    }else{
+      // 最後を通過した後
+      hudMainEl.textContent = "✅ 目的地付近（最後の操作を通過）";
+      hudSubEl.textContent = "";
+    }
+  }
+
+  // 距離の更新
+  lastDist = dist;
+}
+
+// ルート描画＋steps反映
+async function routeFromHereTo(target){
+  if(userLat==null || userLng==null){
+    alert("現在地がまだ取得できていません。位置情報の許可/GPSを確認して少し待ってください。");
+    return;
+  }
+  const A = { lat:userLat, lng:userLng };
   const B = target;
 
-  try {
-    const seg = await routeBetween(A, B);
-    const latlngs = seg.map(([lon, lat]) => [lat, lon]);
-    if (routeFromHereLayer) {
-      map.removeLayer(routeFromHereLayer);
+  try{
+    const { geometry, steps } = await routeWithSteps(A,B);
+
+    // 曲がり角リスト作成
+    maneuverList = buildManeuverList(steps);
+    activeIdx = 0;
+    resetAutoState();
+    lastVibeIdx = -1;
+
+    // ルート線描画
+    const latlngs = geometry.map(([lon,lat]) => [lat,lon]);
+    if(routeFromHereLayer) map.removeLayer(routeFromHereLayer);
+    routeFromHereLayer = L.polyline(latlngs, { weight:2, opacity:.9 }).addTo(map);
+    map.fitBounds(routeFromHereLayer.getBounds(), { padding:[30,30] });
+
+    // HUD初期表示
+    if(maneuverList.length===0){
+      hudBanner.style.display = hudOn ? "block" : "none";
+      hudMainEl.textContent = "（曲がり角なし）そのまま進行";
+      hudSubEl.textContent = "";
+    }else{
+      renderHudOnce();
+      // いま現在地がすでに近いなら即反映
+      tickAutoManeuver();
     }
-    routeFromHereLayer = L.polyline(latlngs, {
-      color: "blue",
-      weight: 2,
-      opacity: 0.9
-    }).addTo(map);
-    map.fitBounds(routeFromHereLayer.getBounds(), { padding: [30, 30] });
-  } catch (err) {
-    alert("現在地からのルート取得に失敗しました：" + err.message);
+  }catch(err){
+    alert("ルート取得に失敗しました：" + err.message);
     console.error(err);
   }
 }
 
-// ページ読み込み時にGitHubから自動取得
-window.addEventListener("load", () => {
-  renderCards();      // ダミーを一応表示（URLパラメータがあればここでも反映）
+// 初期表示
+window.addEventListener("load", ()=>{
+  renderCards();
   loadCsvFromGitHub();
 });
 </script>
 </body>
 </html>
+
 
