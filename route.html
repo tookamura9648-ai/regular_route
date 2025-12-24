@@ -407,26 +407,57 @@ function initMap(lat,lng){
   startGeoWatch();
 }
 
-function startGeoWatch(){
-  if(!navigator.geolocation){ console.warn("Geolocation未対応"); return; }
-  if(geoWatchId!=null) return;
+function startGeoWarmup() {
+  if (!navigator.geolocation) {
+    console.warn("Geolocation がサポートされていません。");
+    return;
+  }
+  if (geoWatchId != null) return;
 
-  geoWatchId = navigator.geolocation.watchPosition(
-    pos=>{
+  // ① まず1回だけ取得して“初速”を上げる
+  navigator.geolocation.getCurrentPosition(
+    pos => {
       userLat = pos.coords.latitude;
       userLng = pos.coords.longitude;
-      const latlng = [userLat, userLng];
-
-      if(!userMarker) userMarker = L.circleMarker(latlng,{ radius:8 }).addTo(map);
-      else userMarker.setLatLng(latlng);
-
-      // ★ GPS更新ごとに「次の操作」を自動更新
-      tickAutoManeuver();
+      // 地図があれば反映（まだ無ければ保持するだけ）
+      updateUserMarkerIfMapReady();
+      // HUDの自動更新も回せる（nextStep等がある場合）
+      tickAutoManeuver?.();
     },
-    err=>{ console.warn("現在地取得失敗:", err); },
-    { enableHighAccuracy:true, maximumAge:10000, timeout:20000 }
+    err => console.warn("getCurrentPosition 失敗:", err),
+    { enableHighAccuracy: true, maximumAge: 0, timeout: 12000 }
+  );
+
+  // ② その後は継続追跡
+  geoWatchId = navigator.geolocation.watchPosition(
+    pos => {
+      userLat = pos.coords.latitude;
+      userLng = pos.coords.longitude;
+      updateUserMarkerIfMapReady();
+      tickAutoManeuver?.();
+    },
+    err => console.warn("watchPosition 失敗:", err),
+    { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 }
   );
 }
+
+// 地図が作られている時だけ現在地マーカー更新
+function updateUserMarkerIfMapReady() {
+  if (!map || userLat == null || userLng == null) return;
+  const latlng = [userLat, userLng];
+
+  if (!userMarker) {
+    userMarker = L.circleMarker(latlng, { radius: 8 }).addTo(map);
+  } else {
+    userMarker.setLatLng(latlng);
+  }
+}
+  
+function startGeoWatch() {
+  // 互換のため残す：地図側から呼ばれたら warmup を確実に開始
+  startGeoWarmup();
+}
+
 
 // ====== ルート取得（OSRM steps=true / バイク） ======
 async function routeWithSteps(A,B){
@@ -645,7 +676,9 @@ async function routeFromHereTo(target){
 window.addEventListener("load", ()=>{
   renderCards();
   loadCsvFromGitHub();
++ startGeoWarmup(); // ★これで「開いた時点」で位置情報開始
 });
+
 </script>
 </body>
 </html>
