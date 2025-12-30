@@ -90,9 +90,105 @@
   }
 
   #map{ flex:1; }
+
+  /* ========= Splash overlay（初回だけ） ========= */
+  #splash{
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(ellipse at center, rgba(0,0,0,.65), rgba(0,0,0,.9));
+    color: #fff;
+    padding: 18px;
+    box-sizing: border-box;
+  }
+  #splash.show{ display:flex; }
+
+  .splash-card{
+    width: min(520px, 92vw);
+    border-radius: 18px;
+    padding: 18px 16px;
+    background: rgba(255,255,255,.06);
+    border: 1px solid rgba(255,255,255,.18);
+    box-shadow: 0 10px 30px rgba(0,0,0,.35);
+    backdrop-filter: blur(8px);
+  }
+  .splash-title{ font-size: 28px; font-weight: 900; letter-spacing: .5px; }
+  .splash-sub{ margin-top: 4px; font-size: 13px; opacity: .9; }
+
+  .splash-loader{
+    display:flex;
+    gap:10px;
+    margin: 16px 0 10px;
+    align-items:center;
+  }
+  .splash-loader .dot{
+    width: 10px; height: 10px; border-radius: 999px;
+    background: rgba(255,255,255,.85);
+    animation: splashBounce 1.1s infinite ease-in-out;
+  }
+  .splash-loader .dot:nth-child(2){ animation-delay: .15s; }
+  .splash-loader .dot:nth-child(3){ animation-delay: .3s; }
+  @keyframes splashBounce{
+    0%,80%,100%{ transform: translateY(0); opacity:.65; }
+    40%{ transform: translateY(-8px); opacity:1; }
+  }
+
+  .splash-gps{ font-size: 15px; font-weight: 800; opacity: .95; }
+  .splash-gps.ok{ color: #b7ffcc; }
+  .splash-gps.slow{ opacity: .85; }
+  .splash-gps.hint{ opacity: .85; font-weight: 700; }
+
+  .splash-note{
+    margin-top: 10px;
+    font-size: 12px;
+    line-height: 1.4;
+    opacity: .9;
+  }
+  .splash-actions{
+    margin-top: 14px;
+    display:flex;
+    gap:10px;
+    justify-content: flex-end;
+  }
+  .splash-actions button{
+    border: none;
+    border-radius: 999px;
+    padding: 8px 12px;
+    font-weight: 900;
+    cursor: pointer;
+  }
+  #splashSkip{ background:#fff; color:#222; opacity:.9; }
+  #splashRetry{ background:#111; color:#fff; border:1px solid rgba(255,255,255,.25); }
 </style>
 </head>
 <body>
+
+<!-- Splash（初回だけ） -->
+<div id="splash" aria-hidden="true">
+  <div class="splash-card">
+    <div class="splash-title">regular_route</div>
+    <div class="splash-sub">配達ナビ（バイク）</div>
+
+    <div class="splash-loader">
+      <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+    </div>
+
+    <div id="splashGpsText" class="splash-gps">GPS準備中…</div>
+
+    <div class="splash-note">
+      初回だけ位置情報の許可が表示されます。<br>
+      許可すると、地図を開いたときにすぐ現在地が出ます。
+    </div>
+
+    <div class="splash-actions">
+      <button id="splashSkip" type="button">スキップ</button>
+      <button id="splashRetry" type="button">再試行</button>
+    </div>
+  </div>
+</div>
 
 <div id="top-bar">
   <div id="top-bar-left">
@@ -161,9 +257,9 @@ const hudSubEl   = document.getElementById("hudSub");
 
 let hudOn = true;
 
-// 次操作管理（ここが今回の“自動更新”の核）
-let maneuverList = [];     // 曲がり角だけ抽出した steps の配列
-let activeIdx = 0;         // maneuverList の現在インデックス
+// 次操作管理（“自動更新”の核）
+let maneuverList = [];
+let activeIdx = 0;
 let state = "idle";        // "idle" | "approaching" | "arrived"
 let lastDist = null;
 let lastVibeIdx = -1;
@@ -171,7 +267,39 @@ let lastVibeIdx = -1;
 // 次操作地点マーカー（任意）
 let nextMarker = null;
 
-// ====== 新聞種フィルタ（既存のまま） ======
+// ====== Splash制御（初回だけ） ======
+const splash = document.getElementById("splash");
+const splashGpsText = document.getElementById("splashGpsText");
+const splashSkip = document.getElementById("splashSkip");
+const splashRetry = document.getElementById("splashRetry");
+
+const SPLASH_KEY = "regular_route_seen_splash_v1";
+function isFirstRun(){ return localStorage.getItem(SPLASH_KEY) !== "1"; }
+function markSeen(){ localStorage.setItem(SPLASH_KEY, "1"); }
+
+function showSplash(){
+  splash.classList.add("show");
+  splash.setAttribute("aria-hidden","false");
+}
+function hideSplash(){
+  splash.classList.remove("show");
+  splash.setAttribute("aria-hidden","true");
+}
+
+splashSkip.addEventListener("click", ()=>{
+  markSeen();
+  hideSplash();
+});
+
+splashRetry.addEventListener("click", ()=>{
+  if (splashGpsText){
+    splashGpsText.textContent = "GPS準備中…";
+    splashGpsText.className = "splash-gps";
+  }
+  startGeoWarmup({ silent:true, allowRestart:true });
+});
+
+// ====== 新聞種フィルタ ======
 function hasEvening(typeStr){ return /よセ|日経セ|日経代/.test(typeStr || ""); }
 function matchTypeFilter(typeVal, entryType){
   if (!typeVal) return true;
@@ -404,60 +532,119 @@ function initMap(lat,lng){
     attribution:"地理院タイル", maxZoom:18, minZoom:5
   }).addTo(map);
   map.setView([lat,lng],17);
-  startGeoWatch();
+  startGeoWatch(); // 地図表示時にも確実に開始
 }
 
-function startGeoWarmup() {
-  if (!navigator.geolocation) {
+// ====== 位置情報 warmup（起動時点で開始／Splashと連動） ======
+function startGeoWarmup(opts = {}){
+  const { silent = true, allowRestart = false } = opts;
+
+  if (!navigator.geolocation){
     console.warn("Geolocation がサポートされていません。");
+    if (isFirstRun() && splashGpsText){
+      splashGpsText.textContent = "この端末は位置情報に対応していません";
+      splashGpsText.className = "splash-gps hint";
+    }
     return;
   }
-  if (geoWatchId != null) return;
 
-  // ① まず1回だけ取得して“初速”を上げる
+  // 既に走っているなら通常は何もしない（再試行時だけ例外）
+  if (geoWatchId != null && !allowRestart) return;
+
+  // 再試行で再開したい場合：一度止めて再スタート
+  if (geoWatchId != null && allowRestart){
+    navigator.geolocation.clearWatch(geoWatchId);
+    geoWatchId = null;
+  }
+
+  // Splash上の文言を“静かに”更新
+  if (isFirstRun() && splashGpsText){
+    splashGpsText.textContent = "GPS準備中…";
+    splashGpsText.className = "splash-gps";
+  }
+
+  // ① 初回1発で初速UP（失敗してもアラートは出さない）
   navigator.geolocation.getCurrentPosition(
     pos => {
       userLat = pos.coords.latitude;
       userLng = pos.coords.longitude;
-      // 地図があれば反映（まだ無ければ保持するだけ）
       updateUserMarkerIfMapReady();
-      // HUDの自動更新も回せる（nextStep等がある場合）
       tickAutoManeuver?.();
+
+      if (isFirstRun() && splashGpsText){
+        splashGpsText.textContent = "GPS準備完了 ✓";
+        splashGpsText.className = "splash-gps ok";
+      }
     },
-    err => console.warn("getCurrentPosition 失敗:", err),
-    { enableHighAccuracy: true, maximumAge: 0, timeout: 12000 }
+    err => {
+      console.warn("getCurrentPosition 失敗:", err);
+      if (isFirstRun() && splashGpsText){
+        splashGpsText.textContent = "GPS準備中…（許可が必要な場合があります）";
+        splashGpsText.className = "splash-gps hint";
+      }
+      if (!silent){
+        // 方針：ここではエラー表示しない（初回ストレスを避ける）
+      }
+    },
+    { enableHighAccuracy:true, maximumAge:0, timeout:12000 }
   );
 
-  // ② その後は継続追跡
+  // ② 継続追跡
   geoWatchId = navigator.geolocation.watchPosition(
     pos => {
       userLat = pos.coords.latitude;
       userLng = pos.coords.longitude;
       updateUserMarkerIfMapReady();
       tickAutoManeuver?.();
+
+      // 初回だけ：fixが来たら少し待ってSplashを閉じる
+      if (isFirstRun() && splash && splash.classList.contains("show")){
+        if (splashGpsText){
+          splashGpsText.textContent = "GPS準備完了 ✓";
+          splashGpsText.className = "splash-gps ok";
+        }
+        setTimeout(()=>{
+          markSeen();
+          hideSplash();
+        }, 450);
+      }
     },
-    err => console.warn("watchPosition 失敗:", err),
-    { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 }
+    err => {
+      console.warn("watchPosition 失敗:", err);
+      if (isFirstRun() && splashGpsText){
+        splashGpsText.textContent = "GPS準備中…（屋内だと時間がかかります）";
+        splashGpsText.className = "splash-gps slow";
+      }
+      if (!silent){
+        // ここもアラートしない
+      }
+    },
+    { enableHighAccuracy:true, maximumAge:1000, timeout:20000 }
   );
+
+  // 遅い端末向けに表示を少し変える
+  if (isFirstRun() && splashGpsText){
+    setTimeout(()=>{
+      if (userLat == null || userLng == null && splash.classList.contains("show")){
+        splashGpsText.textContent = "GPS準備中…（もう少し待ってください）";
+        splashGpsText.className = "splash-gps slow";
+      }
+    }, 4000);
+  }
 }
 
 // 地図が作られている時だけ現在地マーカー更新
-function updateUserMarkerIfMapReady() {
+function updateUserMarkerIfMapReady(){
   if (!map || userLat == null || userLng == null) return;
   const latlng = [userLat, userLng];
-
-  if (!userMarker) {
-    userMarker = L.circleMarker(latlng, { radius: 8 }).addTo(map);
-  } else {
-    userMarker.setLatLng(latlng);
-  }
-}
-  
-function startGeoWatch() {
-  // 互換のため残す：地図側から呼ばれたら warmup を確実に開始
-  startGeoWarmup();
+  if (!userMarker) userMarker = L.circleMarker(latlng, { radius:8 }).addTo(map);
+  else userMarker.setLatLng(latlng);
 }
 
+// 互換：地図側から呼ばれても warmup を確実に開始
+function startGeoWatch(){
+  startGeoWarmup({ silent:true });
+}
 
 // ====== ルート取得（OSRM steps=true / バイク） ======
 async function routeWithSteps(A,B){
@@ -485,7 +672,7 @@ async function routeWithSteps(A,B){
   throw new Error(`ルート取得失敗: ${lastErr}`);
 }
 
-// 曲がり角だけ抽出（右左折/分岐/ラウンドアバウト系）
+// 曲がり角だけ抽出
 function buildManeuverList(steps){
   const interesting = new Set([
     "turn","fork",
@@ -534,7 +721,7 @@ function resetAutoState(){
   lastDist=null;
 }
 
-// HUDを1回描画（手動前/次の押下直後など）
+// HUDを1回描画
 function renderHudOnce(){
   if(!hudOn) return;
   if(maneuverList.length===0){
@@ -554,25 +741,24 @@ function renderHudOnce(){
   }
 }
 
-// 自動更新の心臓部：距離の遷移で「通過→次へ」
+// 自動更新：通過で次へ
 function tickAutoManeuver(){
   if(!hudOn) return;
   if(userLat==null || userLng==null) return;
   if(maneuverList.length===0) return;
   if(activeIdx >= maneuverList.length) return;
 
-  const SHOW_AT   = 150; // 表示開始（バイクなら少し早めでもOK）
-  const ARRIVE_AT = 25;  // ここに入ったら「到達」扱い
-  const LEAVE_AT  = 45;  // 到達後、ここ以上に離れたら「通過」扱い（次へ）
-  const WARN_AT   = 40;  // 強調
-  const VIBE_AT   = 18;  // バイブ（任意）
+  const SHOW_AT   = 150;
+  const ARRIVE_AT = 25;
+  const LEAVE_AT  = 45;
+  const WARN_AT   = 40;
+  const VIBE_AT   = 18;
 
   const user = { lat:userLat, lng:userLng };
   const step = maneuverList[activeIdx];
   const [lon, lat] = step.maneuver.location;
   const dist = Math.round(haversineMeters(user, { lat, lng:lon }));
 
-  // 表示制御
   if(dist > SHOW_AT){
     hudBanner.style.display="none";
     hudBanner.classList.remove("warn");
@@ -585,57 +771,44 @@ function tickAutoManeuver(){
   hudMainEl.textContent = `${label}（${dist}m）`;
   hudSubEl.textContent = `操作 ${activeIdx+1}/${maneuverList.length}`;
 
-  // 強調
   if(dist <= WARN_AT) hudBanner.classList.add("warn");
   else hudBanner.classList.remove("warn");
 
-  // 次操作地点マーカー
   if(map){
     if(!nextMarker) nextMarker = L.marker([lat,lon]).addTo(map);
     else nextMarker.setLatLng([lat,lon]);
   }
 
-  // バイブ（同じ操作で1回だけ）
   if(dist <= VIBE_AT && navigator.vibrate && lastVibeIdx !== activeIdx){
     navigator.vibrate([60,60,60]);
     lastVibeIdx = activeIdx;
   }
 
-  // ---- 自動更新（通過判定）----
-  // idle -> approaching
-  if(state === "idle"){
-    state = "approaching";
-  }
+  if(state === "idle") state = "approaching";
+  if(state === "approaching" && dist <= ARRIVE_AT) state = "arrived";
 
-  // approaching -> arrived
-  if(state === "approaching" && dist <= ARRIVE_AT){
-    state = "arrived";
-  }
-
-  // arrived -> (離れたら) 次へ
   if(state === "arrived" && dist >= LEAVE_AT){
-    // 次へ進む（最後ならそのまま）
     if(activeIdx < maneuverList.length - 1){
       activeIdx++;
       resetAutoState();
-      // 次の操作が変わったので、バイブフラグは次用に（lastVibeIdxはそのままでOK）
       renderHudOnce();
       return;
     }else{
-      // 最後を通過した後
       hudMainEl.textContent = "✅ 目的地付近（最後の操作を通過）";
       hudSubEl.textContent = "";
     }
   }
 
-  // 距離の更新
   lastDist = dist;
 }
 
 // ルート描画＋steps反映
 async function routeFromHereTo(target){
+  // “初回ストレス低減”：ここではalertを減らし、HUDに出す（必要なら）
   if(userLat==null || userLng==null){
-    alert("現在地がまだ取得できていません。位置情報の許可/GPSを確認して少し待ってください。");
+    hudBanner.style.display = hudOn ? "block" : "none";
+    hudMainEl.textContent = "GPS準備中…（少し待って再タップ）";
+    hudSubEl.textContent = "";
     return;
   }
   const A = { lat:userLat, lng:userLng };
@@ -644,26 +817,22 @@ async function routeFromHereTo(target){
   try{
     const { geometry, steps } = await routeWithSteps(A,B);
 
-    // 曲がり角リスト作成
     maneuverList = buildManeuverList(steps);
     activeIdx = 0;
     resetAutoState();
     lastVibeIdx = -1;
 
-    // ルート線描画
     const latlngs = geometry.map(([lon,lat]) => [lat,lon]);
     if(routeFromHereLayer) map.removeLayer(routeFromHereLayer);
     routeFromHereLayer = L.polyline(latlngs, { weight:2, opacity:.9 }).addTo(map);
     map.fitBounds(routeFromHereLayer.getBounds(), { padding:[30,30] });
 
-    // HUD初期表示
     if(maneuverList.length===0){
       hudBanner.style.display = hudOn ? "block" : "none";
       hudMainEl.textContent = "（曲がり角なし）そのまま進行";
       hudSubEl.textContent = "";
     }else{
       renderHudOnce();
-      // いま現在地がすでに近いなら即反映
       tickAutoManeuver();
     }
   }catch(err){
@@ -672,15 +841,23 @@ async function routeFromHereTo(target){
   }
 }
 
-// 初期表示
+// ====== 起動処理 ======
 window.addEventListener("load", ()=>{
   renderCards();
   loadCsvFromGitHub();
-+ startGeoWarmup(); // ★これで「開いた時点」で位置情報開始
-});
 
+  // 初回だけSplash → GPS warmup
+  if (isFirstRun()){
+    showSplash();
+    startGeoWarmup({ silent:true });
+  } else {
+    // 2回目以降も早取りは継続（Splashなし）
+    startGeoWarmup({ silent:true });
+  }
+});
 </script>
 </body>
 </html>
+
 
 
