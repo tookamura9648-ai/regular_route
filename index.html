@@ -2,226 +2,235 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>区域 × 新聞種 選択（順路帳起動）</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>順路帳＋地図（カードタップでルート/HUD/次操作自動更新）</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
 <style>
-  :root {
-    --top-bar-height: 70px;
-  }
-  body {
-    <!-- 起動時スプラッシュ（表紙） -->
-      <div id="coverSplash">
-        <div class="cover-inner">
-          <!-- ★ ロゴ画像（ここを差し替え） -->
-          <img src="logo.png" alt="Corporate Logo" class="cover-logo">
-      
-          <div class="cover-title">regular_route</div>
-          <div class="cover-sub">配達ナビゲーション</div>
-        </div>
-      </div>
+  :root { --top-bar-height: 52px; }
+  body { margin:0; background:#f2f2f2; font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; overflow:hidden; }
 
-    margin: 0;
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    background: #f4f4f8;
-    color: #222;
+  #top-bar{
+    height:var(--top-bar-height); display:flex; align-items:center;
+    padding:4px 8px; box-sizing:border-box; background:#333; color:#fff; font-size:13px; gap:8px;
   }
-  #top-bar {
-    height: var(--top-bar-height);
-    display: flex;
-    align-items: center;
-    padding: 6px 10px;
+  #top-bar-left{ display:flex; align-items:center; gap:6px; }
+  #top-bar-right{ margin-left:auto; }
+  #top-bar button,#top-bar label{
+    display:inline-block; padding:4px 8px; border-radius:6px; background:#fff; color:#333;
+    font-weight:bold; font-size:12px; border:none; cursor:pointer; white-space:nowrap;
+  }
+  #csvFile{ display:none; }
+  #status{ font-size:11px; opacity:.9; }
+
+  #container{
+    display:flex; overflow-x:auto; scroll-snap-type:x mandatory;
+    height:calc(100vh - var(--top-bar-height)); white-space:nowrap;
+  }
+  .group{ display:flex; flex-direction:row; flex:0 0 100vw; scroll-snap-align:start; padding:6px; box-sizing:border-box; }
+  .card{
+    background:#fff; margin:4px; flex:1; border-radius:14px; padding:6px; box-sizing:border-box;
+    border:solid 2px #444; display:flex; flex-direction:column; align-items:stretch; cursor:pointer; touch-action:manipulation;
+  }
+  .card-top{
+    width:100%; display:flex; flex-direction:column; font-size:1.1rem; line-height:1.2; margin-bottom:4px; white-space:pre-line;
+    background:rgba(0,0,0,.9); color:#fff; padding:4px 6px; border-radius:6px;
+
+    /* ★黒帯の高さを揃える（必要なら調整） */
+    height: 96px;
     box-sizing: border-box;
-    background: #333;
-    color: #fff;
-    font-size: 13px;
-    gap: 10px;
-    flex-wrap: wrap;
+    overflow: auto;
+    scrollbar-width: thin;
   }
-  #top-bar-left, #top-bar-center, #top-bar-right {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  #top-bar-center {
-    flex-direction: column;   /* ★ 縦に並べる */
-    align-items: flex-start;  /* 左寄せ（centerにしたい場合は center） */
-    gap: 10px;                /* 行間 */
-  }
+  .card-top::-webkit-scrollbar{ width: 4px; }
+  .card-top::-webkit-scrollbar-thumb{ background: rgba(255,255,255,.35); border-radius: 4px; }
 
-  #top-bar-right {
-    margin-left: auto;
+  .card-no{ font-weight:bold; color:#fff; }
+  .card-type{ font-size:.95rem; color:#ddd; }
+  .card-note{ font-size:.85rem; color:#ccc; margin-top:2px; line-height:1.1; }
+
+  .card-main{ flex:1; display:flex; justify-content:center; gap:4px; overflow:hidden; }
+  .vertical-text{ writing-mode:vertical-rl; text-orientation:mixed; white-space:pre-line; word-break:break-all; }
+  .name-text{ font-size:1.8rem; font-weight:bold; }
+  .addr-text{ font-size:1.2rem; opacity:.9; text-orientation:upright; }
+
+  #container::-webkit-scrollbar{ height:4px; }
+  #container::-webkit-scrollbar-thumb{ background:#999; border-radius:2px; }
+
+  /* 地図オーバーレイ */
+  #mapOverlay{ position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; z-index:1000; }
+  #mapPanel{
+    position:absolute; top:5%; left:5%; width:90%; height:90%;
+    background:#fff; border-radius:14px; display:flex; flex-direction:column; overflow:hidden;
   }
-  #top-bar button,
-  #top-bar label,
-  #top-bar select {
-    padding: 4px 8px;
-    border-radius: 6px;
-    border: none;
-    font-size: 12px;
-    white-space: nowrap;
+  #mapHeader{
+    height:44px; display:flex; align-items:center; justify-content:space-between;
+    padding:0 8px; box-sizing:border-box; background:#333; color:#fff; font-size:13px; gap:6px;
   }
-  #top-bar button,
-  #top-bar label {
-    background: #fff;
-    color: #333;
-    font-weight: bold;
-    cursor: pointer;
+  #mapTitle{ flex:1; padding-right:8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  /* HUD操作ボタン */
+  .hudBtn{
+    border:none; background:#fff; color:#333; border-radius:999px; padding:4px 10px;
+    font-weight:900; cursor:pointer; white-space:nowrap;
   }
-  #top-bar select {
-    background: #fafafa;
-    color: #222;
-    border: 1px solid #ccc;
+  #mapClose{ border:none; background:#fff; color:#333; border-radius:999px; padding:4px 10px; font-weight:bold; cursor:pointer; }
+
+  /* HUD帯 */
+  #hudBanner{
+    display:none;
+    padding:12px 14px;
+    font-size:22px;
+    font-weight:900;
+    background:#111;
+    color:#fff;
+    line-height:1.15;
+    letter-spacing:.5px;
+    border-bottom:2px solid #000;
   }
-  #csvFile {
+  #hudBanner.warn{ background:#b00020; }
+  #hudSub{
+    margin-top:4px;
+    font-size:12px;
+    opacity:.9;
+    font-weight:700;
+  }
+  #map{ flex:1; }
+
+  /* ========= 表紙（毎回3秒） ========= */
+  #coverSplash{
+    position: fixed;
+    inset: 0;
+    z-index: 3000;
     display: none;
-  }
-  #status {
-    font-size: 11px;
-    opacity: 0.9;
-  }
-
-  #main {
-    height: calc(100vh - var(--top-bar-height));
-    box-sizing: border-box;
-    padding: 8px;
-    display: flex;
-    flex-direction: column;
-  }
-
-  #summary {
-    font-size: 13px;
-    margin-bottom: 6px;
-  }
-
-  #list {
-    flex: 1;
-    overflow-y: auto;
-    border-radius: 10px;
-    background: #fff;
-    padding: 6px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.07);
-    box-sizing: border-box;
-  }
-
-  .row {
-    padding: 6px 4px;
-    border-bottom: 1px solid #eee;
-    font-size: 13px;
-  }
-  .row:last-child {
-    border-bottom: none;
-  }
-  .row-header {
-    font-weight: bold;
-    font-size: 12px;
-    color: #555;
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-    margin-bottom: 2px;
-  }
-  .row-main {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-  }
-  .chip {
-    display: inline-block;
-    padding: 1px 6px;
-    border-radius: 999px;
-    font-size: 11px;
-    background: #eee;
-    color: #333;
-  }
-  .chip-area {
-    background: #e0f2ff;
-  }
-  .chip-type {
-    background: #ffe9c7;
-  }
-  .name {
-    font-weight: bold;
-  }
-  .addr {
-    opacity: 0.9;
-  }
-  .note {
-    font-size: 11px;
-    color: #666;
-    margin-top: 2px;
-  }
-
-  #startBtn {
-    margin-left: 8px;
-    background: #4caf50;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(ellipse at center, rgba(40,40,40,1), rgba(0,0,0,1));
     color: #fff;
+    opacity: 1;
+    pointer-events: none;
+    transition: opacity 1.2s ease;
+  }
+  #coverSplash.show{ display:flex; }
+  #coverSplash.fadeout{ opacity: 0; }
+
+  .cover-inner{
+    text-align:center;
+    animation: coverFadeIn 1.2s ease both;
+  }
+  @keyframes coverFadeIn{
+    from{ opacity:0; transform: translateY(8px); }
+    to{ opacity:1; transform: translateY(0); }
+  }
+  .cover-logo{
+    max-width: 180px;
+    max-height: 180px;
+    margin-bottom: 18px;
+    opacity: .95;
+  }
+  .cover-title{
+    font-size: 28px;
+    font-weight: 900;
+    letter-spacing: .6px;
+  }
+  .cover-sub{
+    margin-top: 6px;
+    font-size: 13px;
+    opacity: .85;
+    letter-spacing: .2px;
   }
 
-  @media (max-width: 600px) {
-    #top-bar {
-      height: auto;
-    }
-    #main {
-      height: auto;
-      min-height: calc(100vh - 70px);
-    }
+  /* ========= GPSスプラッシュ（初回のみ／必要な時だけ） ========= */
+  #gpsSplash{
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(ellipse at center, rgba(0,0,0,.65), rgba(0,0,0,.9));
+    color: #fff;
+    padding: 18px;
+    box-sizing: border-box;
   }
-  /* ===== 起動時 表紙スプラッシュ ===== */
-#coverSplash{
-  position: fixed;
-  inset: 0;
-  z-index: 3000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: radial-gradient(
-    ellipse at center,
-    #222 0%,
-    #000 70%
-  );
-  color: #fff;
-  opacity: 1;
-  pointer-events: none;
-  transition: opacity 1.2s ease;
-}
+  #gpsSplash.show{ display:flex; }
 
-#coverSplash.fadeout{
-  opacity: 0;
-}
+  .splash-card{
+    width: min(520px, 92vw);
+    border-radius: 18px;
+    padding: 18px 16px;
+    background: rgba(255,255,255,.06);
+    border: 1px solid rgba(255,255,255,.18);
+    box-shadow: 0 10px 30px rgba(0,0,0,.35);
+    backdrop-filter: blur(8px);
+  }
+  .splash-title{ font-size: 22px; font-weight: 900; letter-spacing: .5px; }
+  .splash-sub{ margin-top: 4px; font-size: 13px; opacity: .9; }
 
-.cover-inner{
-  text-align: center;
-  animation: coverFadeIn 1.2s ease both;
-}
+  .splash-loader{ display:flex; gap:10px; margin: 16px 0 10px; align-items:center; }
+  .splash-loader .dot{
+    width: 10px; height: 10px; border-radius: 999px;
+    background: rgba(255,255,255,.85);
+    animation: splashBounce 1.1s infinite ease-in-out;
+  }
+  .splash-loader .dot:nth-child(2){ animation-delay: .15s; }
+  .splash-loader .dot:nth-child(3){ animation-delay: .3s; }
+  @keyframes splashBounce{
+    0%,80%,100%{ transform: translateY(0); opacity:.65; }
+    40%{ transform: translateY(-8px); opacity:1; }
+  }
 
-@keyframes coverFadeIn{
-  from{ opacity:0; transform: translateY(8px); }
-  to{ opacity:1; transform: translateY(0); }
-}
+  .splash-gps{ font-size: 15px; font-weight: 800; opacity: .95; }
+  .splash-gps.ok{ color: #b7ffcc; }
+  .splash-gps.slow{ opacity: .85; }
+  .splash-gps.hint{ opacity: .85; font-weight: 700; }
 
-.cover-logo{
-  max-width: 180px;
-  max-height: 180px;
-  margin-bottom: 18px;
-  opacity: .95;
-}
-
-.cover-title{
-  font-size: 28px;
-  font-weight: 900;
-  letter-spacing: .6px;
-}
-
-.cover-sub{
-  margin-top: 6px;
-  font-size: 13px;
-  opacity: .85;
-  letter-spacing: .2px;
-}
-
+  .splash-note{ margin-top: 10px; font-size: 12px; line-height: 1.4; opacity: .9; }
+  .splash-actions{ margin-top: 14px; display:flex; gap:10px; justify-content:flex-end; }
+  .splash-actions button{
+    border:none; border-radius:999px; padding:8px 12px; font-weight:900; cursor:pointer;
+  }
+  #gpsSkip{ background:#fff; color:#222; opacity:.9; }
+  #gpsRetry{ background:#111; color:#fff; border:1px solid rgba(255,255,255,.25); }
 </style>
 </head>
 <body>
+
+<!-- 表紙（毎回3秒表示） -->
+<div id="coverSplash" aria-hidden="true">
+  <div class="cover-inner">
+    <!-- ★ロゴ画像：あなたが準備するファイルに差し替え -->
+    <img src="logo.png" alt="Corporate Logo" class="cover-logo">
+    <div class="cover-title">regular_route</div>
+    <div class="cover-sub">配達ナビゲーション</div>
+  </div>
+</div>
+
+<!-- GPSスプラッシュ（初回のみ・必要なら表示） -->
+<div id="gpsSplash" aria-hidden="true">
+  <div class="splash-card">
+    <div class="splash-title">位置情報の準備</div>
+    <div class="splash-sub">初回だけ許可の確認が出ることがあります</div>
+
+    <div class="splash-loader">
+      <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+    </div>
+
+    <div id="gpsSplashText" class="splash-gps">GPS準備中…</div>
+
+    <div class="splash-note">
+      許可すると、地図を開いたときにすぐ現在地が出ます。<br>
+      屋内だと時間がかかる場合があります。
+    </div>
+
+    <div class="splash-actions">
+      <button id="gpsSkip" type="button">スキップ</button>
+      <button id="gpsRetry" type="button">再試行</button>
+    </div>
+  </div>
+</div>
 
 <div id="top-bar">
   <div id="top-bar-left">
@@ -229,357 +238,651 @@
     <label for="csvFile">ローカルCSV</label>
     <input id="csvFile" type="file" accept=".csv">
   </div>
-  <div id="top-bar-center">
-    <span>区域:</span>
-    <select id="areaFilter">
-      <option value="">すべて</option>
-    </select>
-    <span>新聞種:</span>
-    <select id="typeFilter">
-      <option value="">すべて</option>
-    </select>
-    <button id="startBtn">この条件で順路帳を開く</button>
-  </div>
   <div id="top-bar-right">
-    <div id="status">CSV未読み込み</div>
+    <div id="status">GitHubのCSVから自動読み込み（横向き推奨／カードタップでナビ）</div>
   </div>
 </div>
 
-<div id="main">
-  <div id="summary">件数: 0件</div>
-  <div id="list"></div>
+<div id="container"></div>
+
+<div id="mapOverlay">
+  <div id="mapPanel">
+    <div id="mapHeader">
+      <div id="mapTitle">地図</div>
+      <button id="hudToggle" class="hudBtn">HUD ON</button>
+      <button id="prevTurn" class="hudBtn">◀ 前</button>
+      <button id="nextTurn" class="hudBtn">次 ▶</button>
+      <button id="mapClose">閉じる</button>
+    </div>
+
+    <div id="hudBanner">
+      <div id="hudMain">（次の操作）</div>
+      <div id="hudSub"></div>
+    </div>
+
+    <div id="map"></div>
+  </div>
 </div>
 
 <script>
-// ====== GitHub上のCSV URL（ここを書き換えて使ってください） ======
+// ====== GitHub上のCSV URL ======
 const GITHUB_CSV_URL =
   "https://raw.githubusercontent.com/tookamura9648-ai/regular_route/main/regular_route/住所録2025.csv";
 
-// データ構造: { no, type, name, addr1, addr2, addr3, lat, lng, area, note }
+// { no, type, name, addr1, addr2, addr3, lat, lng, area, note }
 let entries = [];
-let filteredEntries = [];
 
-const fileInput    = document.getElementById("csvFile");
-const statusEl     = document.getElementById("status");
-const reloadBtn    = document.getElementById("reloadGitHub");
-const listEl       = document.getElementById("list");
-const summaryEl    = document.getElementById("summary");
-const areaFilter   = document.getElementById("areaFilter");
-const typeFilter   = document.getElementById("typeFilter");
-const startBtn     = document.getElementById("startBtn");
+const fileInput = document.getElementById("csvFile");
+const statusEl  = document.getElementById("status");
+const container = document.getElementById("container");
+const reloadBtn = document.getElementById("reloadGitHub");
 
-// ========== GitHub から読み込み ==========
-async function loadCsvFromGitHub() {
-  if (!GITHUB_CSV_URL || GITHUB_CSV_URL.includes("あなたのユーザー名")) {
-    statusEl.textContent = "GITHUB_CSV_URL を自分のURLに書き換えてください。";
-    return;
-  }
+// 表紙
+const coverSplash = document.getElementById("coverSplash");
 
-  statusEl.textContent = "GitHubからCSV読み込み中…";
+// GPSスプラッシュ（初回のみ）
+const gpsSplash = document.getElementById("gpsSplash");
+const gpsSplashText = document.getElementById("gpsSplashText");
+const gpsSkip = document.getElementById("gpsSkip");
+const gpsRetry = document.getElementById("gpsRetry");
 
-  try {
-    const res = await fetch(GITHUB_CSV_URL, { cache: "no-cache" });
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    const text = await res.text(); // RawはUTF-8想定
+const FIRST_RUN_KEY = "regular_route_seen_first_v1";
+function isFirstRun(){ return localStorage.getItem(FIRST_RUN_KEY) !== "1"; }
+function markFirstRunDone(){ localStorage.setItem(FIRST_RUN_KEY, "1"); }
 
-    const parsed = parseCsvToEntries(text);
-    if (parsed.length === 0) {
-      statusEl.textContent = "データがありません。";
-      entries = [];
-      applyFilterAndRender();
-      return;
-    }
-
-    entries = parsed;
-    statusEl.textContent = `GitHubから読み込み完了（${entries.length}件）`;
-    initFilters();
-    applyFilterAndRender();
-  } catch (e) {
-    console.error(e);
-    statusEl.textContent = "GitHub CSV の読み込みに失敗しました。URLや公開設定を確認してください。";
-  }
+function showGpsSplash(){
+  gpsSplash.classList.add("show");
+  gpsSplash.setAttribute("aria-hidden", "false");
+}
+function hideGpsSplash(){
+  gpsSplash.classList.remove("show");
+  gpsSplash.setAttribute("aria-hidden", "true");
 }
 
-reloadBtn.addEventListener("click", () => {
-  loadCsvFromGitHub();
+gpsSkip.addEventListener("click", ()=>{
+  markFirstRunDone();
+  hideGpsSplash();
+});
+gpsRetry.addEventListener("click", ()=>{
+  if (gpsSplashText){
+    gpsSplashText.textContent = "GPS準備中…";
+    gpsSplashText.className = "splash-gps";
+  }
+  startGeoWarmup({ silent:true, allowRestart:true });
 });
 
-// ========== ローカルCSV読み込み（Shift_JIS想定） ==========
-fileInput.addEventListener("change", (e) => {
+// 地図関連
+let map;
+let destMarker;
+let userMarker;
+let geoWatchId = null;
+let routeFromHereLayer = null;
+let userLat = null;
+let userLng = null;
+
+// GPS状態
+let gpsReady = false;
+
+// HUD/UI
+const mapOverlay = document.getElementById("mapOverlay");
+const mapTitle   = document.getElementById("mapTitle");
+const mapClose   = document.getElementById("mapClose");
+const hudToggle  = document.getElementById("hudToggle");
+const prevTurnBtn= document.getElementById("prevTurn");
+const nextTurnBtn= document.getElementById("nextTurn");
+const hudBanner  = document.getElementById("hudBanner");
+const hudMainEl  = document.getElementById("hudMain");
+const hudSubEl   = document.getElementById("hudSub");
+
+let hudOn = true;
+
+// 次操作管理
+let maneuverList = [];
+let activeIdx = 0;
+let state = "idle";
+let lastDist = null;
+let lastVibeIdx = -1;
+let nextMarker = null;
+
+// ====== 新聞種フィルタ ======
+function hasEvening(typeStr){ return /よセ|日経セ|日経代/.test(typeStr || ""); }
+function matchTypeFilter(typeVal, entryType){
+  if (!typeVal) return true;
+  const evening = hasEvening(entryType);
+  if (typeVal === "evening") return evening;
+  if (typeVal === "morning") return !evening;
+  return true;
+}
+function filterByUrlParams(list){
+  const params = new URLSearchParams(location.search);
+  const areaParam = params.get("area") || "";
+  const typeParam = params.get("type") || "";
+  return list.filter(e => {
+    if (areaParam && e.area !== areaParam) return false;
+    if (!matchTypeFilter(typeParam, e.type || "")) return false;
+    return true;
+  });
+}
+
+// ====== GitHub/ローカルCSV ======
+async function loadCsvFromGitHub(){
+  statusEl.textContent = "GitHub からCSVを読み込み中…";
+  try{
+    const res = await fetch(GITHUB_CSV_URL, { cache:"no-cache" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const text = await res.text();
+    const parsed = parseCsvToEntries(text);
+    entries = parsed;
+    statusEl.textContent = `GitHub から読み込み完了（${entries.length}件）`;
+    renderCards();
+  }catch(e){
+    console.error(e);
+    statusEl.textContent = "GitHub CSV 読み込み失敗。ローカルCSVを使ってください。";
+    renderCards();
+  }
+}
+reloadBtn.addEventListener("click", loadCsvFromGitHub);
+
+fileInput.addEventListener("change",(e)=>{
   const file = e.target.files[0];
   if (!file) return;
-
   const reader = new FileReader();
-  reader.onload = (ev) => {
+  reader.onload = (ev)=>{
     const text = ev.target.result;
     const parsed = parseCsvToEntries(text);
-    if (parsed.length === 0) {
-      alert("有効なデータがありませんでした。CSVの内容を確認してください。");
-      return;
-    }
+    if (parsed.length === 0) { alert("有効なデータがありません。CSVを確認してください。"); return; }
     entries = parsed;
     statusEl.textContent = `ローカルCSVを読み込みました（${entries.length}件）`;
-    initFilters();
-    applyFilterAndRender();
+    renderCards();
   };
   reader.readAsText(file, "Shift_JIS");
 });
 
-// ========== シンプルCSVパーサ（セル内改行・ダブルクォート対応） ==========
-function parseCSV(text) {
-  const rows = [];
-  let row = [];
-  let field = "";
-  let inQuotes = false;
-
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-
-    if (c === '"') {
-      if (inQuotes && text[i + 1] === '"') {
-        field += '"';
-        i++;
-      } else {
-        inQuotes = !inQuotes;
-      }
-    } else if (c === "," && !inQuotes) {
-      row.push(field);
-      field = "";
-    } else if ((c === "\n" || c === "\r") && !inQuotes) {
-      if (c === "\r" && text[i + 1] === "\n") i++;
-      row.push(field);
-      rows.push(row);
-      row = [];
-      field = "";
-    } else {
+function parseCSV(text){
+  const rows=[]; let row=[]; let field=""; let inQuotes=false;
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(c === '"'){
+      if(inQuotes && text[i+1] === '"'){ field+='"'; i++; }
+      else inQuotes = !inQuotes;
+    }else if(c === "," && !inQuotes){
+      row.push(field); field="";
+    }else if((c === "\n" || c === "\r") && !inQuotes){
+      if(c === "\r" && text[i+1] === "\n") i++;
+      row.push(field); rows.push(row);
+      row=[]; field="";
+    }else{
       field += c;
     }
   }
-
-  if (field.length > 0 || row.length > 0) {
-    row.push(field);
-    rows.push(row);
-  }
-
+  if(field.length>0 || row.length>0){ row.push(field); rows.push(row); }
   return rows;
 }
 
-/**
- * CSV文字列 → entries[] に変換
- * フォーマット:
- *  購読者番号,新聞種類,名前,地名,番地,建物,緯度,経度,区域,備考
- */
-function parseCsvToEntries(csvText) {
-  const rows = parseCSV(csvText);
-  const result = [];
-
-  rows.forEach((colsRaw, idx) => {
-    const cols = colsRaw.map(c => (c || "").trim());
-    if (cols.every(c => c === "")) return;
-
+function parseCsvToEntries(csvText){
+  const rows=parseCSV(csvText); const result=[];
+  rows.forEach((colsRaw, idx)=>{
+    const cols = colsRaw.map(c => (c||"").trim());
+    if(cols.every(c=>c==="")) return;
     const joined = cols.join("");
-    if (
-      idx === 0 &&
-      /購読|番号|新聞|種類|名前|氏名|地名|番地|建物|住所|緯度|経度|区域|備考|area|note/i.test(joined)
-    ) {
-      return;
+    if(idx===0 && /購読|番号|新聞|種類|名前|氏名|地名|番地|建物|住所|緯度|経度|区域|備考|area|note/i.test(joined)) return;
+
+    const no=cols[0]||"", type=cols[1]||"", name=cols[2]||"";
+    const addr1=cols[3]||"", addr2=cols[4]||"", addr3=cols[5]||"";
+    if(!no && !name) return;
+
+    let lat=null,lng=null;
+    if(cols.length>=8){
+      const latNum=Number((cols[6]||"").replace(/,/g,""));
+      const lngNum=Number((cols[7]||"").replace(/,/g,""));
+      if(!Number.isNaN(latNum) && !Number.isNaN(lngNum)){ lat=latNum; lng=lngNum; }
     }
-
-    const no    = cols[0] || "";
-    const type  = cols[1] || "";
-    const name  = cols[2] || "";
-    const addr1 = cols[3] || "";
-    const addr2 = cols[4] || "";
-    const addr3 = cols[5] || "";
-
-    if (!no && !name) return;
-
-    let lat = null;
-    let lng = null;
-    if (cols.length >= 8) {
-      const latNum = Number((cols[6] || "").replace(/,/g, ""));
-      const lngNum = Number((cols[7] || "").replace(/,/g, ""));
-      if (!Number.isNaN(latNum) && !Number.isNaN(lngNum)) {
-        lat = latNum;
-        lng = lngNum;
-      }
-    }
-
-    const area = cols[8] || "";
-    const note = cols[9] || "";
-
-    result.push({ no, type, name, addr1, addr2, addr3, lat, lng, area, note });
+    const area=cols[8]||"", note=cols[9]||"";
+    result.push({ no,type,name,addr1,addr2,addr3,lat,lng,area,note });
   });
-
   return result;
 }
 
-// ========== フィルタUI初期化 ==========
-function initFilters() {
-  const areas = new Set();
-  entries.forEach(e => {
-    if (e.area) areas.add(e.area);
-  });
-
-  // 区域プルダウン
-  areaFilter.innerHTML = '<option value="">（区域：すべて）</option>';
-  Array.from(areas).sort().forEach(a => {
-    const opt = document.createElement("option");
-    opt.value = a;
-    opt.textContent = a;
-    areaFilter.appendChild(opt);
-  });
-
-  // ★ 新聞種プルダウン：朝刊 / 夕刊 の2択
-  typeFilter.innerHTML = `
-    <option value="">（新聞種：指定なし）</option>
-    <option value="morning">朝刊（夕刊コードなし）</option>
-    <option value="evening">夕刊あり（よセ／日経セ／日経代）</option>
-  `;
+function chunk(array,size){
+  const out=[];
+  for(let i=0;i<array.length;i+=size) out.push(array.slice(i,i+size));
+  return out;
 }
 
+function renderCards(){
+  container.innerHTML="";
+  const viewEntries = filterByUrlParams(entries);
+  const groups = chunk(viewEntries, 5);
 
-areaFilter.addEventListener("change", applyFilterAndRender);
-typeFilter.addEventListener("change", applyFilterAndRender);
+  groups.forEach(groupData=>{
+    const group=document.createElement("div");
+    group.className="group";
 
-// 「よセ」「日経セ」「日経代」が含まれているかチェック → 夕刊あり
-function hasEvening(typeStr) {
-  const t = typeStr || "";
-  return /よセ|日経セ|日経代/.test(t);
+    groupData.forEach(item=>{
+      const card=document.createElement("div");
+      card.className="card";
+      card.dataset.no=item.no||"";
+      card.dataset.type=item.type||"";
+      card.dataset.name=item.name||"";
+      card.dataset.addr1=item.addr1||"";
+      card.dataset.addr2=item.addr2||"";
+      card.dataset.addr3=item.addr3||"";
+      if(item.lat!=null && item.lng!=null){ card.dataset.lat=item.lat; card.dataset.lng=item.lng; }
+      card.dataset.area=item.area||"";
+      card.dataset.note=item.note||"";
+
+      const top=document.createElement("div");
+      top.className="card-top";
+      const noEl=document.createElement("div"); noEl.className="card-no"; noEl.textContent=item.no||"";
+      const typeEl=document.createElement("div"); typeEl.className="card-type"; typeEl.textContent=item.type||"";
+      top.appendChild(noEl); top.appendChild(typeEl);
+      if(item.note){
+        const noteEl=document.createElement("div"); noteEl.className="card-note"; noteEl.textContent=item.note;
+        top.appendChild(noteEl);
+      }
+
+      const main=document.createElement("div"); main.className="card-main";
+      const nameEl=document.createElement("div"); nameEl.className="vertical-text name-text"; nameEl.textContent=item.name||"";
+      const addr1El=document.createElement("div"); addr1El.className="vertical-text addr-text"; addr1El.textContent=item.addr1||"";
+      const addr2El=document.createElement("div"); addr2El.className="vertical-text addr-text"; addr2El.textContent=item.addr2||"";
+      const addr3El=document.createElement("div"); addr3El.className="vertical-text addr-text"; addr3El.textContent=item.addr3||"";
+      main.appendChild(nameEl);
+      if(item.addr3) main.appendChild(addr3El);
+      if(item.addr2) main.appendChild(addr2El);
+      if(item.addr1) main.appendChild(addr1El);
+
+      card.appendChild(top); card.appendChild(main);
+      card.addEventListener("click", onCardClick);
+      group.appendChild(card);
+    });
+
+    for(let i=groupData.length;i<5;i++){
+      const empty=document.createElement("div");
+      empty.className="card";
+      empty.style.visibility="hidden";
+      group.appendChild(empty);
+    }
+    container.appendChild(group);
+  });
 }
 
-// typeVal: "", "morning", "evening"
-// entryType: CSVの新聞種文字列（例: "読コン2\n報コン2\nよセ 日経セ" など）
-function matchTypeFilter(typeVal, entryType) {
-  if (!typeVal) return true;   // 指定なし（全件）
+// ====== 地図起動 ======
+mapClose.addEventListener("click", ()=>{ mapOverlay.style.display="none"; });
 
-  const evening = hasEvening(entryType);
+hudToggle.addEventListener("click", ()=>{
+  hudOn = !hudOn;
+  hudToggle.textContent = hudOn ? "HUD ON" : "HUD OFF";
+  if(!hudOn){ hudBanner.style.display="none"; hudBanner.classList.remove("warn"); }
+  else { hudBanner.style.display="block"; }
+});
 
-  if (typeVal === "evening") {
-    // 夕刊あり → よセ / 日経セ / 日経代 のどれかが含まれている
-    return evening;
+prevTurnBtn.addEventListener("click", ()=>{
+  if(maneuverList.length === 0) return;
+  activeIdx = Math.max(0, activeIdx - 1);
+  resetAutoState();
+  renderHudOnce();
+});
+
+nextTurnBtn.addEventListener("click", ()=>{
+  if(maneuverList.length === 0) return;
+  activeIdx = Math.min(maneuverList.length - 1, activeIdx + 1);
+  resetAutoState();
+  renderHudOnce();
+});
+
+function onCardClick(e){
+  const card = e.currentTarget;
+  const no = card.dataset.no || "";
+  const name = card.dataset.name || "";
+  const addr = [card.dataset.addr1, card.dataset.addr2, card.dataset.addr3].filter(Boolean).join(" ");
+  const label = (`${no} ${name}`.trim() || addr || "地図").slice(0,40);
+
+  const lat = card.dataset.lat ? Number(card.dataset.lat) : null;
+  const lng = card.dataset.lng ? Number(card.dataset.lng) : null;
+  if(lat==null || lng==null || Number.isNaN(lat) || Number.isNaN(lng)){
+    alert("この順路には緯度・経度がありません。CSVに緯度/経度を入れてください。");
+    return;
   }
-  if (typeVal === "morning") {
-    // 朝刊のみ → 夕刊コードが含まれていない
-    return !evening;
-  }
-  return true;
-}
-  
-
-function applyFilterAndRender() {
-  const areaVal = areaFilter.value;
-  const typeVal = typeFilter.value;   // "", "morning", "evening"
-
-  filteredEntries = entries.filter(e => {
-    if (areaVal && e.area !== areaVal) return false;
-
-    // ★ 朝刊 / 夕刊の判定（「すべて」は普通の朝刊として扱われる）
-    if (!matchTypeFilter(typeVal, e.type || "")) return false;
-
-    return true;
-  });
-
-  renderList();
+  openMapAndRoute(label, lat, lng);
 }
 
+function openMapAndRoute(label, lat, lng){
+  mapTitle.textContent = label;
+  mapOverlay.style.display="block";
 
-function renderList() {
-  listEl.innerHTML = "";
+  if(!map) initMap(lat,lng);
+  else map.setView([lat,lng], 17);
 
-  summaryEl.textContent =
-    `件数: ${filteredEntries.length}件（全体: ${entries.length}件）`;
+  if(!destMarker) destMarker = L.marker([lat,lng]).addTo(map);
+  else destMarker.setLatLng([lat,lng]);
 
-  if (filteredEntries.length === 0) {
-    listEl.textContent = "該当するデータがありません。";
+  if(routeFromHereLayer){ map.removeLayer(routeFromHereLayer); routeFromHereLayer=null; }
+  if(nextMarker){ map.removeLayer(nextMarker); nextMarker=null; }
+
+  maneuverList = [];
+  activeIdx = 0;
+  resetAutoState();
+  hudBanner.style.display = hudOn ? "block" : "none";
+  hudMainEl.textContent = "ルート取得中…";
+  hudSubEl.textContent = "";
+
+  setTimeout(()=> map.invalidateSize(), 200);
+  routeFromHereTo({ lat, lng });
+}
+
+function initMap(lat,lng){
+  map = L.map("map");
+  L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png",{
+    attribution:"地理院タイル", maxZoom:18, minZoom:5
+  }).addTo(map);
+  map.setView([lat,lng],17);
+  startGeoWarmup({ silent:true }); // 地図表示時にも確実に開始
+}
+
+// ====== 位置情報 warmup ======
+function startGeoWarmup(opts = {}){
+  const { silent = true, allowRestart = false } = opts;
+
+  if (!navigator.geolocation){
+    console.warn("Geolocation がサポートされていません。");
+    if (isFirstRun() && gpsSplashText){
+      gpsSplashText.textContent = "この端末は位置情報に対応していません";
+      gpsSplashText.className = "splash-gps hint";
+      showGpsSplash();
+    }
     return;
   }
 
-  filteredEntries.forEach(e => {
-    const row = document.createElement("div");
-    row.className = "row";
+  if (geoWatchId != null && !allowRestart) return;
 
-    const header = document.createElement("div");
-    header.className = "row-header";
+  if (geoWatchId != null && allowRestart){
+    navigator.geolocation.clearWatch(geoWatchId);
+    geoWatchId = null;
+  }
 
-    const noSpan = document.createElement("span");
-    noSpan.textContent = `No: ${e.no}`;
-    header.appendChild(noSpan);
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      gpsReady = true;
+      userLat = pos.coords.latitude;
+      userLng = pos.coords.longitude;
+      updateUserMarkerIfMapReady();
+      tickAutoManeuver?.();
 
-    if (e.area) {
-      const areaSpan = document.createElement("span");
-      areaSpan.className = "chip chip-area";
-      areaSpan.textContent = e.area;
-      header.appendChild(areaSpan);
-    }
+      if (isFirstRun() && gpsSplashText && gpsSplash.classList.contains("show")){
+        gpsSplashText.textContent = "GPS準備完了 ✓";
+        gpsSplashText.className = "splash-gps ok";
+        setTimeout(()=>{
+          markFirstRunDone();
+          hideGpsSplash();
+        }, 450);
+      }
+    },
+    err => {
+      console.warn("getCurrentPosition 失敗:", err);
+      if (isFirstRun() && gpsSplashText && gpsSplash.classList.contains("show")){
+        gpsSplashText.textContent = "GPS準備中…（許可が必要な場合があります）";
+        gpsSplashText.className = "splash-gps hint";
+      }
+      if (!silent) { /* 方針：ここでアラートは出さない */ }
+    },
+    { enableHighAccuracy:true, maximumAge:0, timeout:12000 }
+  );
 
-    if (e.type) {
-      const typeSpan = document.createElement("span");
-      typeSpan.className = "chip chip-type";
-      typeSpan.textContent = e.type;
-      header.appendChild(typeSpan);
-    }
+  geoWatchId = navigator.geolocation.watchPosition(
+    pos => {
+      gpsReady = true;
+      userLat = pos.coords.latitude;
+      userLng = pos.coords.longitude;
+      updateUserMarkerIfMapReady();
+      tickAutoManeuver?.();
 
-    const main = document.createElement("div");
-    main.className = "row-main";
-
-    const nameSpan = document.createElement("span");
-    nameSpan.className = "name";
-    nameSpan.textContent = e.name || "";
-    main.appendChild(nameSpan);
-
-    const addrSpan = document.createElement("span");
-    addrSpan.className = "addr";
-    addrSpan.textContent =
-      [e.addr1, e.addr2, e.addr3].filter(Boolean).join(" ");
-    main.appendChild(addrSpan);
-
-    row.appendChild(header);
-    row.appendChild(main);
-
-    if (e.note) {
-      const noteDiv = document.createElement("div");
-      noteDiv.className = "note";
-      noteDiv.textContent = `備考: ${e.note}`;
-      row.appendChild(noteDiv);
-    }
-
-    listEl.appendChild(row);
-  });
+      if (isFirstRun() && gpsSplash.classList.contains("show")){
+        if (gpsSplashText){
+          gpsSplashText.textContent = "GPS準備完了 ✓";
+          gpsSplashText.className = "splash-gps ok";
+        }
+        setTimeout(()=>{
+          markFirstRunDone();
+          hideGpsSplash();
+        }, 450);
+      }
+    },
+    err => {
+      console.warn("watchPosition 失敗:", err);
+      if (isFirstRun() && gpsSplashText && gpsSplash.classList.contains("show")){
+        gpsSplashText.textContent = "GPS準備中…（屋内だと時間がかかります）";
+        gpsSplashText.className = "splash-gps slow";
+      }
+      if (!silent) { /* ここもアラートしない */ }
+    },
+    { enableHighAccuracy:true, maximumAge:1000, timeout:20000 }
+  );
 }
 
-// ★★「この条件で順路帳を開く」ボタン → route.html に遷移 ★★
-startBtn.addEventListener("click", () => {
-  const areaVal = areaFilter.value || "";
-  const typeVal = typeFilter.value || "";
-  const params = new URLSearchParams();
-  if (areaVal) params.set("area", areaVal);
-  if (typeVal) params.set("type", typeVal);
+function updateUserMarkerIfMapReady(){
+  if (!map || userLat == null || userLng == null) return;
+  const latlng = [userLat, userLng];
+  if (!userMarker) userMarker = L.circleMarker(latlng, { radius:8 }).addTo(map);
+  else userMarker.setLatLng(latlng);
+}
 
-  // ここで route.html に飛ぶ（旧 index.html を route.html にリネームしておく）
-  const url = params.toString()
-    ? `route.html?${params.toString()}`
-    : `route.html`;
-  window.location.href = url;
-});
+// ====== ルート取得（OSRM steps=true / バイク） ======
+async function routeWithSteps(A,B){
+  const profiles = ["bike","bicycle","cycling"];
+  let lastErr="unknown";
+
+  for(const profile of profiles){
+    const url =
+      `https://router.project-osrm.org/route/v1/${profile}/` +
+      `${A.lng},${A.lat};${B.lng},${B.lat}` +
+      `?overview=full&geometries=geojson&alternatives=false&steps=true`;
+    try{
+      const res = await fetch(url);
+      const json = await res.json();
+      if(json.code==="Ok"){
+        const route=json.routes[0];
+        const steps=route.legs?.[0]?.steps ?? [];
+        return { profile, geometry: route.geometry.coordinates, steps, route };
+      }
+      lastErr = json.code || "OSRM error";
+    }catch(e){
+      lastErr = e.message;
+    }
+  }
+  throw new Error(`ルート取得失敗: ${lastErr}`);
+}
+
+// 曲がり角だけ抽出
+function buildManeuverList(steps){
+  const interesting = new Set(["turn","fork","roundabout","rotary","exit roundabout","exit rotary"]);
+  const list = [];
+  for(const s of steps){
+    const t = s?.maneuver?.type;
+    if(interesting.has(t)) list.push(s);
+  }
+  return list;
+}
+
+function formatManeuver(step){
+  const t = step.maneuver.type;
+  const m = step.maneuver.modifier || "";
+
+  if(t==="roundabout" || t==="rotary" || t==="exit roundabout" || t==="exit rotary"){
+    return "⟳ ラウンドアバウト";
+  }
+  if(t==="turn" || t==="fork"){
+    if(m.includes("slight right")) return "↗ ゆるく右";
+    if(m.includes("slight left"))  return "↖ ゆるく左";
+    if(m.includes("right")) return "➡ 右折";
+    if(m.includes("left"))  return "⬅ 左折";
+    if(m.includes("straight")) return "⬆ 直進";
+    return "↩ 進行方向変更";
+  }
+  return "次の操作";
+}
+
+function haversineMeters(a,b){
+  const R=6371000;
+  const toRad=(d)=>d*Math.PI/180;
+  const dLat=toRad(b.lat-a.lat);
+  const dLng=toRad(b.lng-a.lng);
+  const lat1=toRad(a.lat), lat2=toRad(b.lat);
+  const x = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLng/2)**2;
+  return 2*R*Math.asin(Math.min(1,Math.sqrt(x)));
+}
+
+function resetAutoState(){ state="idle"; lastDist=null; }
+
+function renderHudOnce(){
+  if(!hudOn) return;
+  if(maneuverList.length===0){
+    hudBanner.style.display="block";
+    hudMainEl.textContent="（曲がり角なし）";
+    hudSubEl.textContent="";
+    return;
+  }
+  const step = maneuverList[activeIdx];
+  const label = formatManeuver(step);
+  const [lon,lat] = step.maneuver.location;
+  hudMainEl.textContent = label + "（距離計算中）";
+  hudSubEl.textContent = `操作 ${activeIdx+1}/${maneuverList.length}`;
+  if(map){
+    if(!nextMarker) nextMarker = L.marker([lat,lon]).addTo(map);
+    else nextMarker.setLatLng([lat,lon]);
+  }
+}
+
+function tickAutoManeuver(){
+  if(!hudOn) return;
+  if(userLat==null || userLng==null) return;
+  if(maneuverList.length===0) return;
+  if(activeIdx >= maneuverList.length) return;
+
+  const SHOW_AT   = 150;
+  const ARRIVE_AT = 25;
+  const LEAVE_AT  = 45;
+  const WARN_AT   = 40;
+  const VIBE_AT   = 18;
+
+  const user = { lat:userLat, lng:userLng };
+  const step = maneuverList[activeIdx];
+  const [lon, lat] = step.maneuver.location;
+  const dist = Math.round(haversineMeters(user, { lat, lng:lon }));
+
+  if(dist > SHOW_AT){
+    hudBanner.style.display="none";
+    hudBanner.classList.remove("warn");
+    lastDist = dist;
+    return;
+  }
+
+  hudBanner.style.display="block";
+  const label = formatManeuver(step);
+  hudMainEl.textContent = `${label}（${dist}m）`;
+  hudSubEl.textContent = `操作 ${activeIdx+1}/${maneuverList.length}`;
+
+  if(dist <= WARN_AT) hudBanner.classList.add("warn");
+  else hudBanner.classList.remove("warn");
+
+  if(map){
+    if(!nextMarker) nextMarker = L.marker([lat,lon]).addTo(map);
+    else nextMarker.setLatLng([lat,lon]);
+  }
+
+  if(dist <= VIBE_AT && navigator.vibrate && lastVibeIdx !== activeIdx){
+    navigator.vibrate([60,60,60]);
+    lastVibeIdx = activeIdx;
+  }
+
+  if(state === "idle") state = "approaching";
+  if(state === "approaching" && dist <= ARRIVE_AT) state = "arrived";
+
+  if(state === "arrived" && dist >= LEAVE_AT){
+    if(activeIdx < maneuverList.length - 1){
+      activeIdx++;
+      resetAutoState();
+      renderHudOnce();
+      return;
+    }else{
+      hudMainEl.textContent = "✅ 目的地付近（最後の操作を通過）";
+      hudSubEl.textContent = "";
+    }
+  }
+
+  lastDist = dist;
+}
+
+async function routeFromHereTo(target){
+  if(userLat==null || userLng==null){
+    hudBanner.style.display = hudOn ? "block" : "none";
+    hudMainEl.textContent = "GPS準備中…（少し待って再タップ）";
+    hudSubEl.textContent = "";
+    return;
+  }
+  const A = { lat:userLat, lng:userLng };
+  const B = target;
+
+  try{
+    const { geometry, steps } = await routeWithSteps(A,B);
+
+    maneuverList = buildManeuverList(steps);
+    activeIdx = 0;
+    resetAutoState();
+    lastVibeIdx = -1;
+
+    const latlngs = geometry.map(([lon,lat]) => [lat,lon]);
+    if(routeFromHereLayer) map.removeLayer(routeFromHereLayer);
+    routeFromHereLayer = L.polyline(latlngs, { weight:2, opacity:.9 }).addTo(map);
+    map.fitBounds(routeFromHereLayer.getBounds(), { padding:[30,30] });
+
+    if(maneuverList.length===0){
+      hudBanner.style.display = hudOn ? "block" : "none";
+      hudMainEl.textContent = "（曲がり角なし）そのまま進行";
+      hudSubEl.textContent = "";
+    }else{
+      renderHudOnce();
+      tickAutoManeuver();
+    }
+  }catch(err){
+    alert("ルート取得に失敗しました：" + err.message);
+    console.error(err);
+  }
+}
+
+// ====== 起動処理（表紙→フェード→初回だけGPSスプラッシュが必要なら出す） ======
 window.addEventListener("load", ()=>{
-  const cover = document.getElementById("coverSplash");
-  if(!cover) return;
+  renderCards();
+  loadCsvFromGitHub();
 
-  // 表示時間（ms）
+  // GPSは起動時点で温める（裏で進める）
+  startGeoWarmup({ silent:true });
+
+  // 表紙（毎回）
+  coverSplash.classList.add("show");
+  coverSplash.setAttribute("aria-hidden","false");
+
   const SHOW_MS = 3000;
 
   setTimeout(()=>{
-    cover.classList.add("fadeout");
-    // フェードアウト後にDOMから外す
-    setTimeout(()=> cover.remove(), 1400);
-  }, SHOW_MS);
-});
+    coverSplash.classList.add("fadeout");
 
-// 初期：GitHubから読み込み
-window.addEventListener("load", () => {
-  loadCsvFromGitHub();
+    // フェード後に表紙を消す
+    setTimeout(()=>{
+      coverSplash.classList.remove("show");
+      coverSplash.setAttribute("aria-hidden","true");
+
+      // 初回だけ：まだGPSが取れてないならGPSスプラッシュを出す
+      if (isFirstRun() && !gpsReady){
+        if (gpsSplashText){
+          gpsSplashText.textContent = "GPS準備中…";
+          gpsSplashText.className = "splash-gps";
+        }
+        showGpsSplash();
+      }
+    }, 1300);
+  }, SHOW_MS);
 });
 </script>
 </body>
 </html>
+
