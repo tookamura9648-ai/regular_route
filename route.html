@@ -34,10 +34,27 @@
     background:#fff; margin:4px; flex:1; border-radius:14px; padding:6px; box-sizing:border-box;
     border:solid 2px #444; display:flex; flex-direction:column; align-items:stretch; cursor:pointer; touch-action:manipulation;
   }
+  
   .card-top{
-    width:100%; display:flex; flex-direction:column; font-size:1.1rem; line-height:1.2; margin-bottom:4px; white-space:pre-line;
-    background:rgba(0,0,0,.9); color:#fff; padding:4px 6px; border-radius:6px;
-  }
+  width:100%;
+  display:flex;
+  flex-direction:column;
+  font-size:1.1rem;
+  line-height:1.2;
+  margin-bottom:4px;
+  white-space:pre-line;
+
+  background:rgba(0,0,0,.9);
+  color:#fff;
+  padding:4px 6px;
+  border-radius:6px;
+
+  /* ★追加：高さを揃える */
+  height: 96px;          /* 好みで調整（例: 80〜110） */
+  box-sizing: border-box;
+  overflow: hidden;      /* まず隠す */
+}
+
   .card-no{ font-weight:bold; color:#fff; }
   .card-type{ font-size:.95rem; color:#ddd; }
   .card-note{ font-size:.85rem; color:#ccc; margin-top:2px; line-height:1.1; }
