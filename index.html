@@ -9,6 +9,17 @@
     --top-bar-height: 70px;
   }
   body {
+    <!-- 起動時スプラッシュ（表紙） -->
+      <div id="coverSplash">
+        <div class="cover-inner">
+          <!-- ★ ロゴ画像（ここを差し替え） -->
+          <img src="logo.png" alt="Corporate Logo" class="cover-logo">
+      
+          <div class="cover-title">regular_route</div>
+          <div class="cover-sub">配達ナビゲーション</div>
+        </div>
+      </div>
+
     margin: 0;
     font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     background: #f4f4f8;
@@ -155,6 +166,59 @@
       min-height: calc(100vh - 70px);
     }
   }
+  /* ===== 起動時 表紙スプラッシュ ===== */
+#coverSplash{
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(
+    ellipse at center,
+    #222 0%,
+    #000 70%
+  );
+  color: #fff;
+  opacity: 1;
+  pointer-events: none;
+  transition: opacity 1.2s ease;
+}
+
+#coverSplash.fadeout{
+  opacity: 0;
+}
+
+.cover-inner{
+  text-align: center;
+  animation: coverFadeIn 1.2s ease both;
+}
+
+@keyframes coverFadeIn{
+  from{ opacity:0; transform: translateY(8px); }
+  to{ opacity:1; transform: translateY(0); }
+}
+
+.cover-logo{
+  max-width: 180px;
+  max-height: 180px;
+  margin-bottom: 18px;
+  opacity: .95;
+}
+
+.cover-title{
+  font-size: 28px;
+  font-weight: 900;
+  letter-spacing: .6px;
+}
+
+.cover-sub{
+  margin-top: 6px;
+  font-size: 13px;
+  opacity: .85;
+  letter-spacing: .2px;
+}
+
 </style>
 </head>
 <body>
@@ -497,6 +561,19 @@ startBtn.addEventListener("click", () => {
     ? `route.html?${params.toString()}`
     : `route.html`;
   window.location.href = url;
+});
+window.addEventListener("load", ()=>{
+  const cover = document.getElementById("coverSplash");
+  if(!cover) return;
+
+  // 表示時間（ms）
+  const SHOW_MS = 3000;
+
+  setTimeout(()=>{
+    cover.classList.add("fadeout");
+    // フェードアウト後にDOMから外す
+    setTimeout(()=> cover.remove(), 1400);
+  }, SHOW_MS);
 });
 
 // 初期：GitHubから読み込み
