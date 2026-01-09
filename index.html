@@ -78,73 +78,6 @@
   .cover-logo{ max-width:180px; max-height:180px; margin-bottom:18px; opacity:.95; }
   .cover-title{ font-size:28px; font-weight:900; letter-spacing:.6px; }
   .cover-sub{ margin-top:6px; font-size:13px; opacity:.85; letter-spacing:.2px; }
-
-  /* ===== ボタン式フィルタUI ===== */
-.filterBlock{
-  display:flex;
-  flex-direction:column;
-  gap:8px;
-}
-
-.filterLabel{
-  font-size:12px;
-  opacity:.95;
-}
-
-.btnGrid{
-  display:flex;
-  flex-wrap:wrap;
-  gap:6px;
-}
-
-/* 形だけボタン：サイズ統一 */
-.pillBtn{
-  appearance:none;
-  border:1px solid rgba(255,255,255,.35);
-  background: rgba(255,255,255,.10);
-  color:#fff;
-  border-radius: 10px;
-  height: 34px;                /* ★高さ統一 */
-  min-width: 92px;             /* ★幅の最低値 */
-  padding: 0 12px;
-  font-weight: 800;
-  font-size: 12px;
-  letter-spacing:.2px;
-  cursor:pointer;
-  user-select:none;
-}
-
-/* 選択状態 */
-.pillBtn.active{
-  background:#fff;
-  color:#222;
-  border-color:#fff;
-}
-
-/* 実行ボタン（同サイズ） */
-.pillBtn.primary{
-  background:#4caf50;
-  border-color:#4caf50;
-  color:#fff;
-}
-.pillBtn.primary.active{
-  background:#4caf50;
-  border-color:#4caf50;
-  color:#fff;
-}
-
-/* リセット */
-.pillBtn.ghost{
-  background: rgba(255,255,255,.10);
-  border-color: rgba(255,255,255,.35);
-  color:#fff;
-}
-
-/* 小さい画面でも見やすく */
-@media (max-width: 600px){
-  .pillBtn{ min-width: 84px; }
-}
-
 </style>
 </head>
 <body>
@@ -152,9 +85,9 @@
 <!-- 表紙（毎回3秒） -->
 <div id="coverSplash" aria-hidden="true">
   <div class="cover-inner">
-    <img src="./earth7.jpg" alt="Corporate Logo" class="cover-logo">
-    <div class="cover-title">配達ナビゲーション</div>
-    <div class="cover-sub">YS_Media</div>
+    <img src="./logo.png" alt="Corporate Logo" class="cover-logo">
+    <div class="cover-title">regular_route</div>
+    <div class="cover-sub">配達ナビゲーション</div>
   </div>
 </div>
 
@@ -165,21 +98,15 @@
     <input id="csvFile" type="file" accept=".csv">
   </div>
 
-  <div id="top-bar-center" class="filterBlock">
+  <div id="top-bar-center">
+    <span>区域:</span>
+    <select id="areaFilter"><option value="">すべて</option></select>
 
-  <div class="filterLabel">区域（複数選択OK）:</div>
-  <div id="areaButtons" class="btnGrid"></div>
+    <span>新聞種:</span>
+    <select id="typeFilter"><option value="">すべて</option></select>
 
-  <div class="filterLabel">新聞種（1つ選択）:</div>
-  <div id="typeButtons" class="btnGrid"></div>
-
-  <div class="btnGrid">
-    <button id="startBtn" class="pillBtn primary">この条件で順路帳を開く</button>
-    <button id="clearBtn" class="pillBtn ghost">選択クリア</button>
+    <button id="startBtn">この条件で順路帳を開く</button>
   </div>
-
-</div>
-
 
   <div id="top-bar-right">
     <div id="status">CSV未読み込み</div>
@@ -203,15 +130,9 @@ const statusEl   = document.getElementById("status");
 const reloadBtn  = document.getElementById("reloadGitHub");
 const listEl     = document.getElementById("list");
 const summaryEl  = document.getElementById("summary");
+const areaFilter = document.getElementById("areaFilter");
+const typeFilter = document.getElementById("typeFilter");
 const startBtn   = document.getElementById("startBtn");
-const areaButtonsEl = document.getElementById("areaButtons");
-const typeButtonsEl = document.getElementById("typeButtons");
-const clearBtn      = document.getElementById("clearBtn");
-
-// 状態：区域は複数、新聞種は1つ
-let selectedAreas = new Set();      // 例: {"1A","2B"}
-let selectedType  = "";             // "", "morning", "evening"
-
 
 /* ===== 表紙：3秒でフェード→DOM削除 ===== */
 window.addEventListener("load", ()=>{
@@ -325,91 +246,22 @@ function parseCsvToEntries(csvText){
 
 /* フィルタ初期化 */
 function initFilters(){
-  // 区域一覧
-  const areas = Array.from(new Set(entries.map(e=>e.area).filter(Boolean))).sort();
+  const areas = new Set();
+  entries.forEach(e => { if(e.area) areas.add(e.area); });
 
-  // ---- 区域ボタン（複数選択） ----
-  areaButtonsEl.innerHTML = "";
-  // 全て（=未選択扱い）ボタン
-  areaButtonsEl.appendChild(makePillButton("すべて", () => {
-    selectedAreas.clear();
-    syncAreaButtons();
-    applyFilterAndRender();
-  }, selectedAreas.size===0));
-
-  areas.forEach(a=>{
-    areaButtonsEl.appendChild(makePillButton(a, () => {
-      if(selectedAreas.has(a)) selectedAreas.delete(a);
-      else selectedAreas.add(a);
-      syncAreaButtons();
-      applyFilterAndRender();
-    }, selectedAreas.has(a)));
+  areaFilter.innerHTML = '<option value="">（区域：すべて）</option>';
+  Array.from(areas).sort().forEach(a=>{
+    const opt = document.createElement("option");
+    opt.value = a; opt.textContent = a;
+    areaFilter.appendChild(opt);
   });
 
-  // ---- 新聞種ボタン（単一選択）----
-  typeButtonsEl.innerHTML = "";
-  typeButtonsEl.appendChild(makePillButton("指定なし", () => {
-    selectedType = "";
-    syncTypeButtons();
-    applyFilterAndRender();
-  }, selectedType===""));
-
-  typeButtonsEl.appendChild(makePillButton("朝刊", () => {
-    selectedType = "morning";
-    syncTypeButtons();
-    applyFilterAndRender();
-  }, selectedType==="morning"));
-
-  typeButtonsEl.appendChild(makePillButton("夕刊あり", () => {
-    selectedType = "evening";
-    syncTypeButtons();
-    applyFilterAndRender();
-  }, selectedType==="evening"));
-
-  // クリア
-  clearBtn.onclick = () => {
-    selectedAreas.clear();
-    selectedType = "";
-    syncAreaButtons();
-    syncTypeButtons();
-    applyFilterAndRender();
-  };
+  typeFilter.innerHTML = `
+    <option value="">（新聞種：指定なし）</option>
+    <option value="morning">朝刊（夕刊コードなし）</option>
+    <option value="evening">夕刊あり（よセ／日経セ／日経代）</option>
+  `;
 }
-
-function makePillButton(label, onClick, active=false){
-  const btn = document.createElement("button");
-  btn.type = "button";
-  btn.className = "pillBtn" + (active ? " active" : "");
-  btn.textContent = label;
-  btn.addEventListener("click", onClick);
-  return btn;
-}
-
-function syncAreaButtons(){
-  // 先頭「すべて」ボタン含めて全部更新
-  const buttons = Array.from(areaButtonsEl.querySelectorAll("button"));
-  buttons.forEach(btn=>{
-    const label = btn.textContent;
-    if(label === "すべて"){
-      btn.classList.toggle("active", selectedAreas.size===0);
-    }else{
-      btn.classList.toggle("active", selectedAreas.has(label));
-    }
-  });
-}
-
-function syncTypeButtons(){
-  const buttons = Array.from(typeButtonsEl.querySelectorAll("button"));
-  buttons.forEach(btn=>{
-    const label = btn.textContent;
-    let active = false;
-    if(label==="指定なし") active = (selectedType==="");
-    if(label==="朝刊") active = (selectedType==="morning");
-    if(label==="夕刊あり") active = (selectedType==="evening");
-    btn.classList.toggle("active", active);
-  });
-}
-
 
 function hasEvening(typeStr){ return /よセ|日経セ|日経代/.test(typeStr || ""); }
 function matchTypeFilter(typeVal, entryType){
@@ -420,22 +272,21 @@ function matchTypeFilter(typeVal, entryType){
   return true;
 }
 
-
+areaFilter.addEventListener("change", applyFilterAndRender);
+typeFilter.addEventListener("change", applyFilterAndRender);
 
 function applyFilterAndRender(){
+  const areaVal = areaFilter.value;
+  const typeVal = typeFilter.value;
+
   filteredEntries = entries.filter(e=>{
-    // 区域：未選択なら全て、選択ありならその中だけ
-    if(selectedAreas.size > 0 && !selectedAreas.has(e.area)) return false;
-
-    // 新聞種：指定なしなら全て
-    if(!matchTypeFilter(selectedType, e.type || "")) return false;
-
+    if(areaVal && e.area !== areaVal) return false;
+    if(!matchTypeFilter(typeVal, e.type || "")) return false;
     return true;
   });
 
   renderList();
 }
-
 
 function renderList(){
   listEl.innerHTML = "";
@@ -485,28 +336,23 @@ function escapeHtml(s){
 
 /* 順路帳へ */
 startBtn.addEventListener("click", ()=>{
+  const areaVal = areaFilter.value || "";
+  const typeVal = typeFilter.value || "";
   const params = new URLSearchParams();
-
-  // 区域：複数なら a,b,c のようにカンマ区切りで渡す
-  if(selectedAreas.size > 0){
-    params.set("areas", Array.from(selectedAreas).join(","));
-  }
-
-  // 新聞種
-  if(selectedType) params.set("type", selectedType);
+  if(areaVal) params.set("area", areaVal);
+  if(typeVal) params.set("type", typeVal);
 
   const url = params.toString()
     ? `route.html?${params.toString()}`
     : `route.html`;
-
   window.location.href = url;
 });
-
 
 window.addEventListener("load", loadCsv);
 </script>
 </body>
 </html>
+
 
 
 
