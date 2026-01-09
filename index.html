@@ -866,10 +866,9 @@ window.addEventListener("load", ()=>{
   setTimeout(()=>{
     coverSplash.classList.add("fadeout");
 
-    // フェード後に表紙を消す
+    // ★ フェード後に「DOMから完全に削除」する（ここが重要）
     setTimeout(()=>{
-      coverSplash.classList.remove("show");
-      coverSplash.setAttribute("aria-hidden","true");
+      coverSplash.remove();
 
       // 初回だけ：まだGPSが取れてないならGPSスプラッシュを出す
       if (isFirstRun() && !gpsReady){
@@ -879,9 +878,10 @@ window.addEventListener("load", ()=>{
         }
         showGpsSplash();
       }
-    }, 1300);
+    }, 1500); // fadeout(1.2s)より少し長めに
   }, SHOW_MS);
 });
+
 </script>
 </body>
 </html>
