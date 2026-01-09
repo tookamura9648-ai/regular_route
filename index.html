@@ -78,6 +78,59 @@
   .cover-logo{ max-width:180px; max-height:180px; margin-bottom:18px; opacity:.95; }
   .cover-title{ font-size:28px; font-weight:900; letter-spacing:.6px; }
   .cover-sub{ margin-top:6px; font-size:13px; opacity:.85; letter-spacing:.2px; }
+
+  /* ===== select を“ボタン見た目”にする ===== */
+.selectWrap{
+  position: relative;
+  display: inline-block;
+}
+
+/* 本物のselect：透明で上に置く（これが実際にタップされる） */
+.selectWrap select{
+  position:absolute;
+  inset:0;
+  opacity:0;
+  width:100%;
+  height:100%;
+  cursor:pointer;
+}
+
+/* 見た目だけのボタン */
+.fakeBtn{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+
+  height:34px;               /* ★ボタン高さ統一 */
+  min-width:190px;           /* ★幅統一（好みで） */
+  padding:0 12px;
+  border-radius:10px;
+
+  border:1px solid rgba(255,255,255,.35);
+  background: rgba(255,255,255,.10);
+  color:#fff;
+  font-weight:800;
+  font-size:12px;
+  letter-spacing:.2px;
+
+  pointer-events:none;       /* ★押せない（selectが押される） */
+}
+
+.fakeBtn .chev{ opacity:.85; font-size:11px; }
+
+/* top-bar 既存のボタンCSSが強いので上書き */
+#top-bar .fakeBtn{
+  background: rgba(255,255,255,.10) !important;
+  color:#fff !important;
+  border:1px solid rgba(255,255,255,.35) !important;
+}
+
+/* モバイル向け */
+@media (max-width: 600px){
+  .fakeBtn{ min-width:160px; }
+}
+
 </style>
 </head>
 <body>
@@ -100,10 +153,27 @@
 
   <div id="top-bar-center">
     <span>区域:</span>
-    <select id="areaFilter"><option value="">すべて</option></select>
+<div class="selectWrap">
+  <select id="areaFilter">
+    <option value="">すべて</option>
+  </select>
+  <button type="button" class="fakeBtn" aria-hidden="true">
+    <span id="areaLabel">（区域：すべて）</span>
+    <span class="chev">▼</span>
+  </button>
+</div>
 
-    <span>新聞種:</span>
-    <select id="typeFilter"><option value="">すべて</option></select>
+<span>新聞種:</span>
+<div class="selectWrap">
+  <select id="typeFilter">
+    <option value="">すべて</option>
+  </select>
+  <button type="button" class="fakeBtn" aria-hidden="true">
+    <span id="typeLabel">（新聞種：指定なし）</span>
+    <span class="chev">▼</span>
+  </button>
+</div>
+
 
     <button id="startBtn">この条件で順路帳を開く</button>
   </div>
@@ -133,6 +203,16 @@ const summaryEl  = document.getElementById("summary");
 const areaFilter = document.getElementById("areaFilter");
 const typeFilter = document.getElementById("typeFilter");
 const startBtn   = document.getElementById("startBtn");
+const areaLabel = document.getElementById("areaLabel");
+const typeLabel = document.getElementById("typeLabel");
+
+function updateSelectLabels(){
+  const areaText = areaFilter.options[areaFilter.selectedIndex]?.textContent || "すべて";
+  const typeText = typeFilter.options[typeFilter.selectedIndex]?.textContent || "指定なし";
+  areaLabel.textContent = areaText;
+  typeLabel.textContent = typeText;
+}
+
 
 /* ===== 表紙：3秒でフェード→DOM削除 ===== */
 window.addEventListener("load", ()=>{
@@ -257,11 +337,15 @@ function initFilters(){
   });
 
   typeFilter.innerHTML = `
-    <option value="">（新聞種：指定なし）</option>
-    <option value="morning">朝刊（夕刊コードなし）</option>
-    <option value="evening">夕刊あり（よセ／日経セ／日経代）</option>
+    <option value="">（朝刊）</option>
+    <option value="morning"></option>
+    <option value="evening">夕刊</option>
   `;
 }
+initFilters();
+updateSelectLabels();
+applyFilterAndRender();
+
 
 function hasEvening(typeStr){ return /よセ|日経セ|日経代/.test(typeStr || ""); }
 function matchTypeFilter(typeVal, entryType){
@@ -272,8 +356,15 @@ function matchTypeFilter(typeVal, entryType){
   return true;
 }
 
-areaFilter.addEventListener("change", applyFilterAndRender);
-typeFilter.addEventListener("change", applyFilterAndRender);
+areaFilter.addEventListener("change", () => {
+  updateSelectLabels();
+  applyFilterAndRender();
+});
+typeFilter.addEventListener("change", () => {
+  updateSelectLabels();
+  applyFilterAndRender();
+});
+
 
 function applyFilterAndRender(){
   const areaVal = areaFilter.value;
