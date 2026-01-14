@@ -25,15 +25,38 @@
   #csvFile{ display:none; }
   #status{ font-size:11px; opacity:.9; }
 
-  #container{
-    display:flex; overflow-x:auto; scroll-snap-type:x mandatory;
-    height:calc(100vh - var(--top-bar-height)); white-space:nowrap;
-  }
-  .group{ display:flex; flex-direction:row; flex:0 0 100vw; scroll-snap-align:start; padding:6px; box-sizing:border-box; }
+ /* 横スクロール：カード単位で1枚ずつスナップ */
+#container{
+  display:flex;
+  overflow-x:auto;
+  scroll-snap-type:x mandatory;
+  scroll-padding-left: 8px;     /* スナップ位置の気持ちよさ */
+  gap: 8px;                     /* カード間の隙間 */
+  padding: 8px;                 /* 外枠余白 */
+  box-sizing:border-box;
+  height: calc(100vh - var(--top-bar-height));
+  white-space: nowrap;
+  -webkit-overflow-scrolling: touch;
+}
+
+.card{
+  scroll-snap-align: start;
+  scroll-snap-stop: always;     /* iOS系で “1枚ずつ”感が増える */
+  flex: 0 0 calc((100vw - 8px*2 - 8px*2) / 3); /* ★縦向き: 3枚見せ */
+  height: 100%;
+  margin: 0;                    /* container側でgap/padding管理 */
+}
+
+/* 横向き（広い画面）は 5枚見せ */
+@media (orientation: landscape){
   .card{
-    background:#fff; margin:4px; flex:1; border-radius:14px; padding:6px; box-sizing:border-box;
-    border:solid 2px #444; display:flex; flex-direction:column; align-items:stretch; cursor:pointer; touch-action:manipulation;
+    flex-basis: calc((100vw - 8px*2 - 8px*4) / 5); /* ★横向き: 5枚見せ */
   }
+}
+
+/* 旧groupは使わないので無効化（残っててもOK） */
+.group{ display: none; }
+
   
   .card-top{
   width:100%;
@@ -421,62 +444,82 @@ function chunk(array,size){
   return out;
 }
 
-function renderCards(){
-  container.innerHTML="";
+function renderCards() {
+  container.innerHTML = "";
+
   const viewEntries = filterByUrlParams(entries);
-  const groups = chunk(viewEntries, 5);
 
-  groups.forEach(groupData=>{
-    const group=document.createElement("div");
-    group.className="group";
+  viewEntries.forEach(item => {
+    const card = document.createElement("div");
+    card.className = "card";
 
-    groupData.forEach(item=>{
-      const card=document.createElement("div");
-      card.className="card";
-      card.dataset.no=item.no||"";
-      card.dataset.type=item.type||"";
-      card.dataset.name=item.name||"";
-      card.dataset.addr1=item.addr1||"";
-      card.dataset.addr2=item.addr2||"";
-      card.dataset.addr3=item.addr3||"";
-      if(item.lat!=null && item.lng!=null){ card.dataset.lat=item.lat; card.dataset.lng=item.lng; }
-      card.dataset.area=item.area||"";
-      card.dataset.note=item.note||"";
-
-      const top=document.createElement("div");
-      top.className="card-top";
-      const noEl=document.createElement("div"); noEl.className="card-no"; noEl.textContent=item.no||"";
-      const typeEl=document.createElement("div"); typeEl.className="card-type"; typeEl.textContent=item.type||"";
-      top.appendChild(noEl); top.appendChild(typeEl);
-      if(item.note){
-        const noteEl=document.createElement("div"); noteEl.className="card-note"; noteEl.textContent=item.note;
-        top.appendChild(noteEl);
-      }
-
-      const main=document.createElement("div"); main.className="card-main";
-      const nameEl=document.createElement("div"); nameEl.className="vertical-text name-text"; nameEl.textContent=item.name||"";
-      const addr1El=document.createElement("div"); addr1El.className="vertical-text addr-text"; addr1El.textContent=item.addr1||"";
-      const addr2El=document.createElement("div"); addr2El.className="vertical-text addr-text"; addr2El.textContent=item.addr2||"";
-      const addr3El=document.createElement("div"); addr3El.className="vertical-text addr-text"; addr3El.textContent=item.addr3||"";
-      main.appendChild(nameEl);
-      if(item.addr3) main.appendChild(addr3El);
-      if(item.addr2) main.appendChild(addr2El);
-      if(item.addr1) main.appendChild(addr1El);
-
-      card.appendChild(top); card.appendChild(main);
-      card.addEventListener("click", onCardClick);
-      group.appendChild(card);
-    });
-
-    for(let i=groupData.length;i<5;i++){
-      const empty=document.createElement("div");
-      empty.className="card";
-      empty.style.visibility="hidden";
-      group.appendChild(empty);
+    card.dataset.no = item.no || "";
+    card.dataset.type = item.type || "";
+    card.dataset.name = item.name || "";
+    card.dataset.addr1 = item.addr1 || "";
+    card.dataset.addr2 = item.addr2 || "";
+    card.dataset.addr3 = item.addr3 || "";
+    if (item.lat != null && item.lng != null) {
+      card.dataset.lat = item.lat;
+      card.dataset.lng = item.lng;
     }
-    container.appendChild(group);
+    card.dataset.area = item.area || "";
+    card.dataset.note = item.note || "";
+
+    const top = document.createElement("div");
+    top.className = "card-top";
+
+    const noEl = document.createElement("div");
+    noEl.className = "card-no";
+    noEl.textContent = item.no || "";
+
+    const typeEl = document.createElement("div");
+    typeEl.className = "card-type";
+    typeEl.textContent = item.type || "";
+
+    top.appendChild(noEl);
+    top.appendChild(typeEl);
+
+    if (item.note) {
+      const noteEl = document.createElement("div");
+      noteEl.className = "card-note";
+      noteEl.textContent = item.note;
+      top.appendChild(noteEl);
+    }
+
+    const main = document.createElement("div");
+    main.className = "card-main";
+
+    const nameEl = document.createElement("div");
+    nameEl.className = "vertical-text name-text";
+    nameEl.textContent = item.name || "";
+
+    const addr1El = document.createElement("div");
+    addr1El.className = "vertical-text addr-text";
+    addr1El.textContent = item.addr1 || "";
+
+    const addr2El = document.createElement("div");
+    addr2El.className = "vertical-text addr-text";
+    addr2El.textContent = item.addr2 || "";
+
+    const addr3El = document.createElement("div");
+    addr3El.className = "vertical-text addr-text";
+    addr3El.textContent = item.addr3 || "";
+
+    main.appendChild(nameEl);
+    if (item.addr3) main.appendChild(addr3El);
+    if (item.addr2) main.appendChild(addr2El);
+    if (item.addr1) main.appendChild(addr1El);
+
+    card.appendChild(top);
+    card.appendChild(main);
+
+    card.addEventListener("click", onCardClick);
+
+    container.appendChild(card);
   });
 }
+
 
 // ====== 地図起動 ======
 mapClose.addEventListener("click", ()=>{ mapOverlay.style.display="none"; });
