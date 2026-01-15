@@ -708,7 +708,8 @@ function startGeoWatch(){
 
 // ====== ルート取得（OSRM steps=true / バイク） ======
 async function routeWithSteps(A,B){
-  const profiles = ["foot","walking","bike","bicycle","cycling"];
+  const profiles = ["foot","walking"]   
+//,"bike","bicycle","cycling"];
   let lastErr="unknown";
 
   for(const profile of profiles){
