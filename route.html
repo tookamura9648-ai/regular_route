@@ -283,6 +283,11 @@ let geoWatchId = null;
 let routeFromHereLayer = null;
 let userLat = null;
 let userLng = null;
+let focusRing = null;       // 分岐点の強調円
+let focusArrow = null;      // 進行方向の強調ライン
+let prevZoom = null;        // 戻す用
+let focusLatLng = null;     // 現在強調中の分岐点
+
 
 // HUD/UI
 const mapOverlay = document.getElementById("mapOverlay");
@@ -542,8 +547,12 @@ nextTurnBtn.addEventListener("click", ()=>{
   if(maneuverList.length === 0) return;
   activeIdx = Math.min(maneuverList.length - 1, activeIdx + 1);
   resetAutoState();
+
+  clearTurnFocus();
   renderHudOnce();
+  tickAutoManeuver();
 });
+
 
 function onCardClick(e){
   const card = e.currentTarget;
@@ -594,6 +603,88 @@ function initMap(lat,lng){
   map.setView([lat,lng],17);
   startGeoWatch(); // 地図表示時にも確実に開始
 }
+
+function clearTurnFocus(){
+  if (!map) return;
+  if (focusRing){ map.removeLayer(focusRing); focusRing = null; }
+  if (focusArrow){ map.removeLayer(focusArrow); focusArrow = null; }
+  focusLatLng = null;
+
+  // ズームを戻す（戻し先があるときだけ）
+  if (prevZoom != null){
+    map.setZoom(prevZoom, { animate: true });
+    prevZoom = null;
+  }
+}
+
+// stepのgeometryから「次に進む方向」を短いラインで作る
+function buildArrowLatLngs(step){
+  // OSRM step.geometry は GeoJSON LineString (coordinates: [[lon,lat], ...])
+  const coords = step?.geometry?.coordinates;
+  if (!coords || coords.length < 2) return null;
+
+  // 分岐点（maneuver.location）に最も近い点を探して、そこから先を使う
+  const [mlon, mlat] = step.maneuver.location;
+  let bestIdx = 0;
+  let bestD = Infinity;
+  for (let i = 0; i < coords.length; i++){
+    const [lon, lat] = coords[i];
+    const d = (lon-mlon)*(lon-mlon) + (lat-mlat)*(lat-mlat);
+    if (d < bestD){ bestD = d; bestIdx = i; }
+  }
+
+  // bestIdx から少し先までを矢印ラインにする
+  const a = coords[bestIdx];
+  const b = coords[Math.min(bestIdx + 3, coords.length - 1)]; // 3点先くらい
+  if (!a || !b) return null;
+
+  return [[a[1], a[0]], [b[1], b[0]]];
+}
+
+function showTurnFocus(step){
+  if (!map || !step) return;
+
+  const [lon, lat] = step.maneuver.location;
+  const key = `${lat.toFixed(6)},${lon.toFixed(6)}`;
+
+  // 既に同じ分岐点を強調しているなら何もしない
+  if (focusLatLng === key) return;
+  focusLatLng = key;
+
+  // 初回だけズームの戻し先を保存
+  if (prevZoom == null){
+    prevZoom = map.getZoom();
+  }
+
+  // 近づいたらズームアップ（最大19程度）
+  const targetZoom = Math.min(19, Math.max(17, prevZoom + 1));
+  if (map.getZoom() < targetZoom){
+    map.setZoom(targetZoom, { animate: true });
+  }
+
+  // 分岐点へ少し寄せる（画面中央へ）
+  map.panTo([lat, lon], { animate: true });
+
+  // 強調リング（半径はだいたい 18m）
+  if (focusRing) map.removeLayer(focusRing);
+  focusRing = L.circle([lat, lon], {
+    radius: 18,           // m
+    weight: 4,
+    opacity: 0.9,
+    fillOpacity: 0.0
+  }).addTo(map);
+
+  // 進行方向ライン（step.geometryから短く引く）
+  const arrow = buildArrowLatLngs(step);
+  if (arrow){
+    if (focusArrow) map.removeLayer(focusArrow);
+    focusArrow = L.polyline(arrow, {
+      weight: 8,
+      opacity: 0.85
+    }).addTo(map);
+  }
+}
+
 
 // ====== 位置情報 warmup（起動時点で開始／Splashと連動） ======
 function startGeoWarmup(opts = {}){
@@ -717,6 +808,7 @@ async function routeWithSteps(A,B){
       `https://router.project-osrm.org/route/v1/${profile}/` +
       `${A.lng},${A.lat};${B.lng},${B.lat}` +
       `?overview=full&geometries=geojson&alternatives=false&steps=true`;
+
     try{
       const res = await fetch(url);
       const json = await res.json();
@@ -814,6 +906,9 @@ function tickAutoManeuver(){
   const LEAVE_AT  = 45;
   const WARN_AT   = 40;
   const VIBE_AT   = 18;
+  const FOCUS_AT  = 80;   // 80m以内で強調開始
+  const UNFOCUS_AT = 140; // 140mより遠くなったら解除（通過後や離れた時）
+
 
   const user = { lat:userLat, lng:userLng };
   const step = maneuverList[activeIdx];
@@ -825,6 +920,13 @@ function tickAutoManeuver(){
     hudBanner.classList.remove("warn");
     lastDist = dist;
     return;
+  }
+  // --- 近づいたら交差点を拡大＆方向強調 ---
+  if (dist <= FOCUS_AT) {
+    showTurnFocus(step);
+  } else if (dist >= UNFOCUS_AT) {
+    // 遠いなら強調解除（普段は邪魔しない）
+    clearTurnFocus();
   }
 
   hudBanner.style.display="block";
@@ -848,17 +950,29 @@ function tickAutoManeuver(){
   if(state === "idle") state = "approaching";
   if(state === "approaching" && dist <= ARRIVE_AT) state = "arrived";
 
-  if(state === "arrived" && dist >= LEAVE_AT){
-    if(activeIdx < maneuverList.length - 1){
-      activeIdx++;
-      resetAutoState();
-      renderHudOnce();
-      return;
-    }else{
-      hudMainEl.textContent = "✅ 目的地付近（最後の操作を通過）";
-      hudSubEl.textContent = "";
-    }
+  // arrived -> (離れたら) 次へ
+if(state === "arrived" && dist >= LEAVE_AT){
+  // 次へ進む（最後ならそのまま）
+  if(activeIdx < maneuverList.length - 1){
+    activeIdx++;
+
+    resetAutoState();
+
+    // ★ 追加ここから
+    clearTurnFocus();     // 前の交差点の強調を消す
+    renderHudOnce();      // HUDを次の操作に更新
+    tickAutoManeuver();   // 次の交差点が近ければ即ズーム＆強調
+    // ★ 追加ここまで
+
+    return;
+  }else{
+    // 最後を通過した後
+    clearTurnFocus();
+    hudMainEl.textContent = "✅ 目的地付近（最後の操作を通過）";
+    hudSubEl.textContent = "";
   }
+}
+
 
   lastDist = dist;
 }
