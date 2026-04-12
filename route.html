@@ -9,7 +9,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <style>
-  :root { --top-bar-height: 52px; }
+  :root { --top-bar-height: 52px; --record-bar-height: 48px; }
   body { margin:0; background:#f2f2f2; font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; overflow:hidden; }
 
   #top-bar{
@@ -25,6 +25,32 @@
   #csvFile{ display:none; }
   #status{ font-size:11px; opacity:.9; }
 
+  #recordBar{
+    height:var(--record-bar-height);
+    display:flex;
+    align-items:center;
+    gap:8px;
+    flex-wrap:wrap;
+    padding:6px 8px;
+    box-sizing:border-box;
+    background:#444;
+    color:#fff;
+    font-size:12px;
+  }
+  #recordBar button{
+    display:inline-block; padding:4px 8px; border-radius:6px; background:#fff; color:#333;
+    font-weight:bold; font-size:12px; border:none; cursor:pointer; white-space:nowrap;
+  }
+  #recordBar button:disabled{ opacity:.5; cursor:default; }
+  #recordStats{
+    font-family:ui-monospace,Consolas,Menlo,monospace;
+    font-size:11px;
+    opacity:.95;
+    margin-left:auto;
+    white-space:nowrap;
+  }
+  .record-warn{ color:#ffd3d3; }
+
  /* 横スクロール：カード単位で1枚ずつスナップ */
 #container{
   display:flex;
@@ -34,7 +60,7 @@
   gap: 8px;                     /* カード間の隙間 */
   padding: 8px;                 /* 外枠余白 */
   box-sizing:border-box;
-  height: calc(100vh - var(--top-bar-height));
+  height: calc(100vh - var(--top-bar-height) - var(--record-bar-height));
   white-space: nowrap;
   -webkit-overflow-scrolling: touch;
 }
@@ -241,6 +267,16 @@
   </div>
 </div>
 
+<div id="recordBar">
+  <button id="btnRecStart" type="button">記録開始</button>
+  <button id="btnRecPause" type="button" disabled>一時停止</button>
+  <button id="btnRecStop" type="button" disabled>記録停止</button>
+  <button id="btnRecSave" type="button" disabled>GeoJSON保存</button>
+  <button id="btnRecClear" type="button" disabled>クリア</button>
+  <span id="recordStatus">ルート記録停止中</span>
+  <span id="recordStats">pts:0 | dist:0 m | acc:–</span>
+</div>
+
 <div id="container"></div>
 
 <div id="mapOverlay">
@@ -274,6 +310,13 @@ const fileInput = document.getElementById("csvFile");
 const statusEl  = document.getElementById("status");
 const container = document.getElementById("container");
 const reloadBtn = document.getElementById("reloadGitHub");
+const btnRecStart = document.getElementById("btnRecStart");
+const btnRecPause = document.getElementById("btnRecPause");
+const btnRecStop  = document.getElementById("btnRecStop");
+const btnRecSave  = document.getElementById("btnRecSave");
+const btnRecClear = document.getElementById("btnRecClear");
+const recordStatusEl = document.getElementById("recordStatus");
+const recordStatsEl  = document.getElementById("recordStats");
 
 // 地図関連
 let map;
@@ -311,6 +354,174 @@ let lastVibeIdx = -1;
 
 // 次操作地点マーカー（任意）
 let nextMarker = null;
+
+// ====== ルート記録（第一段階） ======
+let recPoints = []; // {lat,lng,time,acc}
+let recDistance = 0;
+let recLastPoint = null;
+let recRecording = false;
+let recPaused = false;
+let recordedRouteLayer = null;
+
+
+function haversineMeters(a, b){
+  const R = 6371000;
+  const toRad = d => d * Math.PI / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat), lat2 = toRad(b.lat);
+  const x = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLng/2)**2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(x)));
+}
+
+function setRecordStatus(msg, warn=false){
+  recordStatusEl.textContent = msg;
+  recordStatusEl.className = warn ? "record-warn" : "";
+}
+
+function updateRecordStats(acc){
+  recordStatsEl.textContent =
+    `pts:${recPoints.length} | dist:${recDistance.toFixed(0)} m | acc:${acc?.toFixed?.(0) ?? "–"} m`;
+}
+
+function refreshRecordedRouteLayer(){
+  if (!map) return;
+  const latlngs = recPoints.map(p => [p.lat, p.lng]);
+  if (recordedRouteLayer){
+    map.removeLayer(recordedRouteLayer);
+    recordedRouteLayer = null;
+  }
+  if (latlngs.length >= 2){
+    recordedRouteLayer = L.polyline(latlngs, {
+      weight: 5,
+      opacity: .85,
+      color: "#00a6b2"
+    }).addTo(map);
+  }
+}
+
+function recordPointFromCoords(coords){
+  if (!recRecording || recPaused) return;
+  const lat = coords.latitude;
+  const lng = coords.longitude;
+  const acc = coords.accuracy;
+  if (lat == null || lng == null) return;
+
+  const maxAcc = 25;
+  const minDist = 5;
+  const cur = { lat, lng };
+
+  if (acc && acc > maxAcc){
+    setRecordStatus(`記録中（精度 ${acc.toFixed(0)}m のためスキップ）`);
+    updateRecordStats(acc);
+    return;
+  }
+
+  if (recLastPoint){
+    const d = haversineMeters(recLastPoint, cur);
+    if (d < minDist){
+      updateRecordStats(acc);
+      return;
+    }
+    recDistance += d;
+  }
+
+  recLastPoint = cur;
+  recPoints.push({
+    lat, lng,
+    time: new Date().toISOString(),
+    acc: acc || null
+  });
+  refreshRecordedRouteLayer();
+  updateRecordStats(acc);
+  btnRecSave.disabled = recPoints.length === 0;
+  btnRecClear.disabled = recPoints.length === 0;
+}
+
+function startRouteRecording(){
+  recRecording = true;
+  recPaused = false;
+  btnRecStart.disabled = true;
+  btnRecPause.disabled = false;
+  btnRecStop.disabled = false;
+  btnRecSave.disabled = recPoints.length === 0;
+  btnRecClear.disabled = recPoints.length === 0;
+  btnRecPause.textContent = "一時停止";
+  setRecordStatus("ルート記録中…");
+}
+
+function pauseRouteRecording(){
+  if (!recRecording) return;
+  recPaused = !recPaused;
+  btnRecPause.textContent = recPaused ? "再開" : "一時停止";
+  setRecordStatus(recPaused ? "一時停止中" : "ルート記録中…");
+}
+
+function stopRouteRecording(){
+  recRecording = false;
+  recPaused = false;
+  btnRecStart.disabled = false;
+  btnRecPause.disabled = true;
+  btnRecStop.disabled = true;
+  btnRecPause.textContent = "一時停止";
+  btnRecSave.disabled = recPoints.length === 0;
+  btnRecClear.disabled = recPoints.length === 0;
+  setRecordStatus("記録停止。GeoJSON保存できます。");
+}
+
+function clearRouteRecording(){
+  recPoints = [];
+  recDistance = 0;
+  recLastPoint = null;
+  if (recordedRouteLayer && map){
+    map.removeLayer(recordedRouteLayer);
+    recordedRouteLayer = null;
+  }
+  btnRecSave.disabled = true;
+  btnRecClear.disabled = true;
+  setRecordStatus("記録データをクリアしました。");
+  updateRecordStats();
+}
+
+function downloadTextFile(name, text, type="application/octet-stream"){
+  const blob = new Blob([text], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function saveRecordedGeoJSON(){
+  if (recPoints.length === 0){
+    alert("保存するルートがありません。");
+    return;
+  }
+  const coords = recPoints.map(p => [p.lng, p.lat]);
+  const gj = {
+    type: "FeatureCollection",
+    features: [{
+      type: "Feature",
+      properties: {
+        name: "recorded_route",
+        point_count: recPoints.length,
+        distance_m: Math.round(recDistance),
+        start_time: recPoints[0]?.time || null,
+        end_time: recPoints[recPoints.length - 1]?.time || null
+      },
+      geometry: {
+        type: "LineString",
+        coordinates: coords
+      }
+    }]
+  };
+  const d = new Date();
+  const pad = n => String(n).padStart(2, "0");
+  const fileName = `route_${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}.geojson`;
+  downloadTextFile(fileName, JSON.stringify(gj, null, 2), "application/geo+json");
+  setRecordStatus("GeoJSONを保存しました。");
+}
 
 // ====== Splash制御（初回だけ） ======
 const splash = document.getElementById("splash");
@@ -592,6 +803,7 @@ function openMapAndRoute(label, lat, lng){
   hudSubEl.textContent = "";
 
   setTimeout(()=> map.invalidateSize(), 200);
+  refreshRecordedRouteLayer();
   routeFromHereTo({ lat, lng });
 }
 
@@ -602,6 +814,7 @@ function initMap(lat,lng){
   }).addTo(map);
   map.setView([lat,lng],17);
   startGeoWatch(); // 地図表示時にも確実に開始
+  refreshRecordedRouteLayer();
 }
 
 function clearTurnFocus(){
@@ -720,6 +933,7 @@ function startGeoWarmup(opts = {}){
       userLat = pos.coords.latitude;
       userLng = pos.coords.longitude;
       updateUserMarkerIfMapReady();
+      recordPointFromCoords(pos.coords);
       tickAutoManeuver?.();
 
       if (isFirstRun() && splashGpsText){
@@ -746,6 +960,7 @@ function startGeoWarmup(opts = {}){
       userLat = pos.coords.latitude;
       userLng = pos.coords.longitude;
       updateUserMarkerIfMapReady();
+      recordPointFromCoords(pos.coords);
       tickAutoManeuver?.();
 
       // 初回だけ：fixが来たら少し待ってSplashを閉じる
@@ -1016,6 +1231,13 @@ async function routeFromHereTo(target){
   }
 }
 
+btnRecStart.addEventListener("click", startRouteRecording);
+btnRecPause.addEventListener("click", pauseRouteRecording);
+btnRecStop.addEventListener("click", stopRouteRecording);
+btnRecSave.addEventListener("click", saveRecordedGeoJSON);
+btnRecClear.addEventListener("click", clearRouteRecording);
+updateRecordStats();
+
 // ====== 起動処理 ======
 window.addEventListener("load", ()=>{
   renderCards();
@@ -1033,6 +1255,7 @@ window.addEventListener("load", ()=>{
 </script>
 </body>
 </html>
+
 
 
 
