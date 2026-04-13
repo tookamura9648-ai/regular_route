@@ -1,9 +1,9 @@
 <!doctype html>
 <html lang="ja">
 <head>
-<meta charset="shift_jis">
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>��� �~ �V���� �I���i���H���N���j</title>
+<title>区域 × 新聞種 選択（順路帳起動）</title>
 <style>
   :root { --top-bar-height: 70px; }
   body { margin:0; font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#f4f4f8; color:#222; }
@@ -58,7 +58,7 @@
     #main{ height:auto; min-height:calc(100vh - 70px); }
   }
 
-  /* ===== �\���i3�b�j ===== */
+  /* ===== 表紙（3秒） ===== */
   #coverSplash{
     position: fixed; inset:0; z-index:3000;
     display:flex; align-items:center; justify-content:center;
@@ -79,13 +79,13 @@
   .cover-title{ font-size:28px; font-weight:900; letter-spacing:.6px; }
   .cover-sub{ margin-top:6px; font-size:13px; opacity:.85; letter-spacing:.2px; }
 
-  /* ===== select ���g�{�^�������ځh�ɂ��� ===== */
+  /* ===== select を“ボタン見た目”にする ===== */
 .selectWrap{
   position: relative;
   display: inline-block;
 }
 
-/* �{����select�F�����ŏ�ɒu���i���ꂪ���ۂɃ^�b�v�����j */
+/* 本物のselect：透明で上に置く（これが実際にタップされる） */
 .selectWrap select{
   position:absolute;
   inset:0;
@@ -95,15 +95,15 @@
   cursor:pointer;
 }
 
-/* �����ڂ����̃{�^�� */
+/* 見た目だけのボタン */
 .fakeBtn{
   display:flex;
   align-items:center;
   justify-content:space-between;
   gap:10px;
 
-  height:34px;               /* ���{�^���������� */
-  min-width:190px;           /* ��������i�D�݂Łj */
+  height:34px;               /* ★ボタン高さ統一 */
+  min-width:190px;           /* ★幅統一（好みで） */
   padding:0 12px;
   border-radius:10px;
 
@@ -114,19 +114,19 @@
   font-size:12px;
   letter-spacing:.2px;
 
-  pointer-events:none;       /* �������Ȃ��iselect���������j */
+  pointer-events:none;       /* ★押せない（selectが押される） */
 }
 
 .fakeBtn .chev{ opacity:.85; font-size:11px; }
 
-/* top-bar �����̃{�^��CSS�������̂ŏ㏑�� */
+/* top-bar 既存のボタンCSSが強いので上書き */
 #top-bar .fakeBtn{
   background: rgba(255,255,255,.10) !important;
   color:#fff !important;
   border:1px solid rgba(255,255,255,.35) !important;
 }
 
-/* ���o�C������ */
+/* モバイル向け */
 @media (max-width: 600px){
   .fakeBtn{ min-width:160px; }
 }
@@ -135,62 +135,62 @@
 </head>
 <body>
 
-<!-- �\���i����3�b�j -->
+<!-- 表紙（毎回3秒） -->
 <div id="coverSplash" aria-hidden="true">
   <div class="cover-inner">
     <img src="./earth7.jpg" alt="Corporate Logo" class="cover-logo">
-    <div class="cover-title">Web���H��</div>
-    <div class="cover-sub">���C�G�X ���f�B�A</div>
+    <div class="cover-title">Web順路帳</div>
+    <div class="cover-sub">ワイエス メディア</div>
   </div>
 </div>
 
 <div id="top-bar">
   <div id="top-bar-left">
-    <button id="reloadGitHub">CSV�ēǍ�</button>
-    <label for="csvFile">���[�J��CSV</label>
+    <button id="reloadGitHub">CSV再読込</button>
+    <label for="csvFile">ローカルCSV</label>
     <input id="csvFile" type="file" accept=".csv">
   </div>
 
   <div id="top-bar-center">
-    <span>���:</span>
+    <span>区域:</span>
 <div class="selectWrap">
   <select id="areaFilter">
-    <option value="">���ׂ�</option>
+    <option value="">すべて</option>
   </select>
   <button type="button" class="fakeBtn" aria-hidden="true">
-    <span id="areaLabel">�i���F���ׂāj</span>
-    <span class="chev">��</span>
+    <span id="areaLabel">（区域：すべて）</span>
+    <span class="chev">▼</span>
   </button>
 </div>
 
-<span>���E�[��:</span>
+<span>朝・夕刊:</span>
 <div class="selectWrap">
   <select id="typeFilter">
-    <option value="">���ׂ�</option>
+    <option value="">すべて</option>
   </select>
   <button type="button" class="fakeBtn" aria-hidden="true">
-    <span id="typeLabel">�i�w��Ȃ��j</span>
-    <span class="chev">��</span>
+    <span id="typeLabel">（指定なし）</span>
+    <span class="chev">▼</span>
   </button>
 </div>
 
 
-    <button id="startBtn">���H���J��</button>
+    <button id="startBtn">順路帳開く</button>
   </div>
 
   <div id="top-bar-right">
-    <div id="status">CSV���ǂݍ���</div>
+    <div id="status">CSV未読み込み</div>
   </div>
 </div>
 
 <div id="main">
-  <div id="summary">����: 0��</div>
+  <div id="summary">件数: 0件</div>
   <div id="list"></div>
 </div>
 
 <script>
-/* ===== CSV�̏ꏊ�FVercel�ɒu����CSV��ǂށi�������߁j ===== */
-const CSV_URL = "https://raw.githubusercontent.com/tookamura9648-ai/regular_route/main/data/�Z���^.csv";
+/* ===== CSVの場所：Vercelに置いたCSVを読む（おすすめ） ===== */
+const CSV_URL = "https://raw.githubusercontent.com/tookamura9648-ai/regular_route/main/data/住所録.csv";
 
 let entries = [];
 let filteredEntries = [];
@@ -207,14 +207,14 @@ const areaLabel = document.getElementById("areaLabel");
 const typeLabel = document.getElementById("typeLabel");
 
 function updateSelectLabels(){
-  const areaText = areaFilter.options[areaFilter.selectedIndex]?.textContent || "���ׂ�";
-  const typeText = typeFilter.options[typeFilter.selectedIndex]?.textContent || "�w��Ȃ�";
+  const areaText = areaFilter.options[areaFilter.selectedIndex]?.textContent || "すべて";
+  const typeText = typeFilter.options[typeFilter.selectedIndex]?.textContent || "指定なし";
   areaLabel.textContent = areaText;
   typeLabel.textContent = typeText;
 }
 
 
-/* ===== �\���F3�b�Ńt�F�[�h��DOM�폜 ===== */
+/* ===== 表紙：3秒でフェード→DOM削除 ===== */
 window.addEventListener("load", ()=>{
   const cover = document.getElementById("coverSplash");
   const SHOW_MS = 3000;
@@ -224,57 +224,79 @@ window.addEventListener("load", ()=>{
   }, SHOW_MS);
 });
 
-/* ===== CSV�ǂݍ��� ===== */
+/* ===== CSV読み込み ===== */
+function scoreDecodedCsv(text){
+  if (!text) return -1;
+  let score = 0;
+  if (/区域/.test(text)) score += 3;
+  if (/番号/.test(text)) score += 2;
+  if (/種別1|種別１/.test(text)) score += 4;
+  if (/名前/.test(text)) score += 3;
+  if (/住所1|住所１/.test(text)) score += 3;
+  if (/読者番号/.test(text)) score += 3;
+  if (/�/.test(text)) score -= 8;
+  return score;
+}
+
+function decodeCsvBuffer(buf){
+  const candidates = ["utf-8", "shift_jis"];
+  let bestText = "";
+  let bestScore = -Infinity;
+  for (const enc of candidates){
+    try{
+      const t = new TextDecoder(enc).decode(buf);
+      const s = scoreDecodedCsv(t);
+      if (s > bestScore){
+        bestScore = s;
+        bestText = t;
+      }
+    }catch(e){}
+  }
+  return bestText;
+}
+
 async function loadCsv(){
-  statusEl.textContent = "CSV�ǂݍ��ݒ��c";
+  statusEl.textContent = "CSV読み込み中…";
   try{
     const res = await fetch(CSV_URL, { cache:"no-cache" });
     if(!res.ok) throw new Error("HTTP " + res.status);
-
     const buf = await res.arrayBuffer();
-    let text;
-    try{
-      text = new TextDecoder("shift_jis").decode(buf);
-    }catch(_e){
-      text = new TextDecoder("utf-8").decode(buf);
-    }
-
+    const text = decodeCsvBuffer(buf);
     const parsed = parseCsvToEntries(text);
     entries = parsed;
-    statusEl.textContent = `�ǂݍ��݊����i${entries.length}���j`;
+    statusEl.textContent = `読み込み完了（${entries.length}件）`;
     initFilters();
-    updateSelectLabels();
     applyFilterAndRender();
   }catch(e){
     console.error(e);
-    statusEl.textContent = "CSV�ǂݍ��݂Ɏ��s���܂����B�p�X����J�ݒ���m�F���Ă��������B";
+    statusEl.textContent = "CSV読み込みに失敗しました。パスや公開設定を確認してください。";
     entries = [];
     initFilters();
-    updateSelectLabels();
     applyFilterAndRender();
   }
 }
 
 reloadBtn.addEventListener("click", loadCsv);
 
-/* ���[�J��CSV */
+/* ローカルCSV */
 fileInput.addEventListener("change",(e)=>{
   const file = e.target.files[0];
   if(!file) return;
   const reader = new FileReader();
   reader.onload = (ev)=>{
-    const text = ev.target.result;
+    const buf = ev.target.result;
+    const text = decodeCsvBuffer(buf);
     const parsed = parseCsvToEntries(text);
-    if(parsed.length === 0){ alert("�L���ȃf�[�^������܂���ł����B"); return; }
+    if(parsed.length === 0){ alert("有効なデータがありませんでした。"); return; }
     entries = parsed;
-    statusEl.textContent = `���[�J��CSV��ǂݍ��݂܂����i${entries.length}���j`;
+    statusEl.textContent = `ローカルCSVを読み込みました（${entries.length}件）`;
     initFilters();
     applyFilterAndRender();
   };
-  reader.readAsText(file, "Shift_JIS");
+  reader.readAsArrayBuffer(file);
 });
 
-/* CSV�p�[�T */
+/* CSVパーサ */
 function parseCSV(text){
   const rows=[]; let row=[]; let field=""; let inQuotes=false;
   for(let i=0;i<text.length;i++){
@@ -296,6 +318,9 @@ function parseCSV(text){
   return rows;
 }
 
+/**
+ *  購読者番号,新聞種類,名前,地名,番地,建物,緯度,経度,区域,備考
+ */
 function normalizeCount(v){
   const s = (v ?? "").toString().trim();
   if(!s) return 1;
@@ -306,43 +331,34 @@ function normalizeCount(v){
 function buildPaperTypeString(pairs){
   return pairs
     .filter(x => x.paper)
-    .map(({paper, count}) => count > 1 ? `${paper}�~${count}` : paper)
+    .map(({ paper, count }) => count > 1 ? `${paper}×${count}` : paper)
     .join(" / ");
 }
 
-/**
- * �VCSV:
- * ���,�ԍ�,���1,����1,���2,����2,���3,����3,���L����,���O,�Z��1,�Z��2,�ǎҔԍ�,[�ܓx,�o�x,...]
- */
 function parseCsvToEntries(csvText){
   const rows = parseCSV(csvText);
   const result = [];
   if(!rows || rows.length === 0) return result;
 
-  rows.forEach((colsRaw, idx) => {
-    const cols = colsRaw.map(c => (c || "").trim());
-    if(cols.every(c => c === "")) return;
+  rows.forEach((colsRaw, idx)=>{
+    const cols = colsRaw.map(c => (c||"").trim());
+    if(cols.every(c=>c==="")) return;
 
     const joined = cols.join("");
+
     if(
-      idx === 0 &&
-      /���|�ԍ�|���1|���2|���3|����|���L����|���O|�Z��1|�Z��2|�ǎҔԍ�|�ܓx|�o�x|captured_at|capture_source/i.test(joined)
-    ){
-      return;
-    }
+      idx===0 &&
+      /区域|番号|種別1|種別１|種別2|種別２|種別3|種別３|部数|特記事項|名前|住所1|住所１|住所2|住所２|読者番号|緯度|経度|captured_at|capture_source/i.test(joined)
+    ) return;
 
     const area     = cols[0]  || "";
     const rowNo    = cols[1]  || "";
-
     const paper1   = cols[2]  || "";
     const count1   = normalizeCount(cols[3]);
-
     const paper2   = cols[4]  || "";
     const count2   = normalizeCount(cols[5]);
-
     const paper3   = cols[6]  || "";
     const count3   = normalizeCount(cols[7]);
-
     const note     = cols[8]  || "";
     const name     = cols[9]  || "";
     const addr1    = cols[10] || "";
@@ -351,7 +367,7 @@ function parseCsvToEntries(csvText){
 
     if(!name && !addr1) return;
 
-    const addr2 = addr2raw && addr2raw !== "�@" ? addr2raw : "";
+    const addr2 = addr2raw && addr2raw !== "　" ? addr2raw : "";
     const addr3 = "";
     const no = rowNo || readerNo;
 
@@ -380,12 +396,12 @@ function parseCsvToEntries(csvText){
   return result;
 }
 
-/* �t�B���^������ */
+/* フィルタ初期化 */
 function initFilters(){
   const areas = new Set();
   entries.forEach(e => { if(e.area) areas.add(e.area); });
 
-  areaFilter.innerHTML = '<option value="">�i���F���ׂāj</option>';
+  areaFilter.innerHTML = '<option value="">（区域：すべて）</option>';
   Array.from(areas).sort().forEach(a=>{
     const opt = document.createElement("option");
     opt.value = a; opt.textContent = a;
@@ -393,9 +409,9 @@ function initFilters(){
   });
 
   typeFilter.innerHTML = `
-    <option value="">�i�V����F���ׂāj</option>
-    <option value="morning">����</option>
-    <option value="evening">�[��</option>
+    <option value="">（新聞種：すべて）</option>
+    <option value="morning">朝刊</option>
+    <option value="evening">夕刊</option>
   `;
 }
 initFilters();
@@ -403,7 +419,7 @@ updateSelectLabels();
 applyFilterAndRender();
 
 
-function hasEvening(typeStr){ return /��Z|���o�Z|���o��/.test(typeStr || ""); }
+function hasEvening(typeStr){ return /よセ|日経セ|日経代/.test(typeStr || ""); }
 function matchTypeFilter(typeVal, entryType){
   if(!typeVal) return true;
   const evening = hasEvening(entryType);
@@ -437,10 +453,10 @@ function applyFilterAndRender(){
 
 function renderList(){
   listEl.innerHTML = "";
-  summaryEl.textContent = `����: ${filteredEntries.length}���i�S��: ${entries.length}���j`;
+  summaryEl.textContent = `件数: ${filteredEntries.length}件（全体: ${entries.length}件）`;
 
   if(filteredEntries.length===0){
-    listEl.textContent = "�Y������f�[�^������܂���B";
+    listEl.textContent = "該当するデータがありません。";
     return;
   }
 
@@ -469,7 +485,7 @@ function renderList(){
     if(e.note){
       const note=document.createElement("div");
       note.className="note";
-      note.textContent = `���l: ${e.note}`;
+      note.textContent = `備考: ${e.note}`;
       row.appendChild(note);
     }
 
@@ -481,7 +497,7 @@ function escapeHtml(s){
   return (s||"").replace(/[&<>"']/g, m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[m]));
 }
 
-/* ���H���� */
+/* 順路帳へ */
 startBtn.addEventListener("click", ()=>{
   const areaVal = areaFilter.value || "";
   const typeVal = typeFilter.value || "";
