@@ -480,21 +480,60 @@ function saveEducationCsv(){
     alert('保存するCSVデータがありません。');
     return;
   }
-  const header = ['購読者番号','新聞種類','名前','地名','番地','建物','緯度','経度','区域','備考','captured_at','capture_source'];
-  const lines = [header.join(',')];
+
+  const hasNewFormat = entries.some(item =>
+    item.paper1 != null || item.paper2 != null || item.paper3 != null || item.readerNo != null
+  );
+
+  let header;
+  if (hasNewFormat){
+    header = [
+      '区域','番号',
+      '種別1','部数1',
+      '種別2','部数2',
+      '種別3','部数3',
+      '特記事項','名前','住所1','住所2','読者番号',
+      '緯度','経度','captured_at','capture_source'
+    ];
+  } else {
+    header = ['購読者番号','新聞種類','名前','地名','番地','建物','緯度','経度','区域','備考','captured_at','capture_source'];
+  }
+
+  const lines = [header.map(csvEscape).join(',')];
+
   for (const item of entries){
     const key = entryKey(item);
     const cap = educationCaptures.get(key);
     const lat = cap ? cap.lat : (item.lat ?? '');
     const lng = cap ? cap.lng : (item.lng ?? '');
     const capturedAt = cap ? cap.captured_at : (item.captured_at || '');
-    const captureSource = cap ? cap.source : '';
-    const row = [
-      item.no || '', item.type || '', item.name || '', item.addr1 || '', item.addr2 || '', item.addr3 || '',
-      lat, lng, item.area || '', item.note || '', capturedAt, captureSource
-    ].map(csvEscape).join(',');
-    lines.push(row);
+    const captureSource = cap ? cap.source : (item.capture_source || '');
+
+    let row;
+    if (hasNewFormat){
+      row = [
+        item.area || '',
+        item.no || '',
+        item.paper1 || '', item.count1 || '',
+        item.paper2 || '', item.count2 || '',
+        item.paper3 || '', item.count3 || '',
+        item.note || '',
+        item.name || '',
+        item.addr1 || '',
+        item.addr2 || '',
+        item.readerNo || '',
+        lat, lng, capturedAt, captureSource
+      ];
+    } else {
+      row = [
+        item.no || '', item.type || '', item.name || '', item.addr1 || '', item.addr2 || '', item.addr3 || '',
+        lat, lng, item.area || '', item.note || '', capturedAt, captureSource
+      ];
+    }
+
+    lines.push(row.map(csvEscape).join(','));
   }
+
   const d = new Date();
   const fileName = `education_destinations_${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}.csv`;
   downloadTextFile(fileName, lines.join('\r\n'), 'text/csv;charset=utf-8');
@@ -767,8 +806,93 @@ function parseCSV(text){
   return rows;
 }
 
+function normalizeCount(v){
+  const s = (v ?? "").toString().trim();
+  if(!s) return 1;
+  const n = Number(s.replace(/,/g,""));
+  return Number.isFinite(n) && n > 0 ? n : 1;
+}
+
+function buildPaperTypeString(pairs){
+  return pairs.map(({paper,count}) => count > 1 ? `${paper}×${count}` : paper).join(" / ");
+}
+
 function parseCsvToEntries(csvText){
-  const rows=parseCSV(csvText); const result=[];
+  const rows = parseCSV(csvText);
+  const result = [];
+  if(!rows || rows.length===0) return result;
+
+  const header = (rows[0] || []).map(c => (c || "").trim());
+  const isNewFormat = header.some(h => /^種別[１２３123]$/.test(h)) && header.includes("名前");
+
+  if(isNewFormat){
+    const latIdx = header.indexOf('緯度');
+    const lngIdx = header.indexOf('経度');
+    const capturedAtIdx = header.indexOf('captured_at');
+    const captureSourceIdx = header.indexOf('capture_source');
+
+    for(let idx=1; idx<rows.length; idx++){
+      const cols = (rows[idx] || []).map(c => (c || "").trim());
+      if(cols.every(c => c === "")) continue;
+
+      const area = cols[0] || "";
+      const rowNo = cols[1] || "";
+      const pairs = [
+        { paper: cols[2] || "", count: normalizeCount(cols[3]) },
+        { paper: cols[4] || "", count: normalizeCount(cols[5]) },
+        { paper: cols[6] || "", count: normalizeCount(cols[7]) }
+      ].filter(x => x.paper);
+
+      const type = buildPaperTypeString(pairs);
+      const note = cols[8] || "";
+      const name = cols[9] || "";
+      const addr1raw = cols[10] || "";
+      const addr2raw = cols[11] || "";
+      const readerNo = cols[12] || "";
+
+      if(!name && !addr1raw) continue;
+
+      const addr1 = addr1raw;
+      const addr2 = addr2raw && addr2raw !== "　" ? addr2raw : "";
+      const addr3 = "";
+      const no = rowNo ? `${rowNo}` : readerNo;
+
+      let lat = null, lng = null;
+      if(latIdx >= 0 && lngIdx >= 0){
+        const latNum = Number((cols[latIdx] || "").replace(/,/g,""));
+        const lngNum = Number((cols[lngIdx] || "").replace(/,/g,""));
+        if(!Number.isNaN(latNum) && !Number.isNaN(lngNum)){
+          lat = latNum;
+          lng = lngNum;
+        }
+      }
+
+      result.push({
+        no,
+        type,
+        name,
+        addr1,
+        addr2,
+        addr3,
+        lat,
+        lng,
+        area,
+        note,
+        readerNo,
+        paper1: cols[2] || "",
+        count1: cols[2] ? normalizeCount(cols[3]) : '',
+        paper2: cols[4] || "",
+        count2: cols[4] ? normalizeCount(cols[5]) : '',
+        paper3: cols[6] || "",
+        count3: cols[6] ? normalizeCount(cols[7]) : '',
+        captured_at: capturedAtIdx >= 0 ? (cols[capturedAtIdx] || '') : '',
+        capture_source: captureSourceIdx >= 0 ? (cols[captureSourceIdx] || '') : '',
+        fullAddress: `滋賀県大津市${addr1raw}${addr2 ? " " + addr2 : ""}`.trim()
+      });
+    }
+    return result;
+  }
+
   rows.forEach((colsRaw, idx)=>{
     const cols = colsRaw.map(c => (c||"").trim());
     if(cols.every(c=>c==="")) return;
@@ -786,7 +910,7 @@ function parseCsvToEntries(csvText){
       if(!Number.isNaN(latNum) && !Number.isNaN(lngNum)){ lat=latNum; lng=lngNum; }
     }
     const area=cols[8]||"", note=cols[9]||"";
-    result.push({ no,type,name,addr1,addr2,addr3,lat,lng,area,note });
+    result.push({ no,type,name,addr1,addr2,addr3,lat,lng,area,note,fullAddress:`滋賀県大津市${addr1}${addr2?" "+addr2:""} ${addr3}`.trim() });
   });
   return result;
 }
