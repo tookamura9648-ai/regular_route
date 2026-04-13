@@ -230,17 +230,27 @@ async function loadCsv(){
   try{
     const res = await fetch(CSV_URL, { cache:"no-cache" });
     if(!res.ok) throw new Error("HTTP " + res.status);
-    const text = await res.text();
+
+    const buf = await res.arrayBuffer();
+    let text;
+    try{
+      text = new TextDecoder("shift_jis").decode(buf);
+    }catch(_e){
+      text = new TextDecoder("utf-8").decode(buf);
+    }
+
     const parsed = parseCsvToEntries(text);
     entries = parsed;
     statusEl.textContent = `読み込み完了（${entries.length}件）`;
     initFilters();
+    updateSelectLabels();
     applyFilterAndRender();
   }catch(e){
     console.error(e);
     statusEl.textContent = "CSV読み込みに失敗しました。パスや公開設定を確認してください。";
     entries = [];
     initFilters();
+    updateSelectLabels();
     applyFilterAndRender();
   }
 }
@@ -286,39 +296,85 @@ function parseCSV(text){
   return rows;
 }
 
+function normalizeCount(v){
+  const s = (v ?? "").toString().trim();
+  if(!s) return 1;
+  const n = Number(s.replace(/,/g,""));
+  return Number.isFinite(n) && n > 0 ? n : 1;
+}
+
+function buildPaperTypeString(pairs){
+  return pairs
+    .filter(x => x.paper)
+    .map(({paper, count}) => count > 1 ? `${paper}×${count}` : paper)
+    .join(" / ");
+}
+
 /**
- *  購読者番号,新聞種類,名前,地名,番地,建物,緯度,経度,区域,備考
+ * 新CSV:
+ * 区域,番号,種別1,部数1,種別2,部数2,種別3,部数3,特記事項,名前,住所1,住所2,読者番号,[緯度,経度,...]
  */
 function parseCsvToEntries(csvText){
   const rows = parseCSV(csvText);
   const result = [];
+  if(!rows || rows.length === 0) return result;
 
-  rows.forEach((colsRaw, idx)=>{
-    const cols = colsRaw.map(c => (c||"").trim());
-    if(cols.every(c=>c==="")) return;
+  rows.forEach((colsRaw, idx) => {
+    const cols = colsRaw.map(c => (c || "").trim());
+    if(cols.every(c => c === "")) return;
 
     const joined = cols.join("");
-    if(idx===0 && /購読|番号|新聞|種類|名前|氏名|地名|番地|建物|住所|緯度|経度|区域|備考|area|note/i.test(joined)) return;
-
-    const no    = cols[0] || "";
-    const type  = cols[1] || "";
-    const name  = cols[2] || "";
-    const addr1 = cols[3] || "";
-    const addr2 = cols[4] || "";
-    const addr3 = cols[5] || "";
-
-    if(!no && !name) return;
-
-    let lat=null,lng=null;
-    if(cols.length>=8){
-      const latNum = Number((cols[6]||"").replace(/,/g,""));
-      const lngNum = Number((cols[7]||"").replace(/,/g,""));
-      if(!Number.isNaN(latNum) && !Number.isNaN(lngNum)){ lat=latNum; lng=lngNum; }
+    if(
+      idx === 0 &&
+      /区域|番号|種別1|種別2|種別3|部数|特記事項|名前|住所1|住所2|読者番号|緯度|経度|captured_at|capture_source/i.test(joined)
+    ){
+      return;
     }
 
-    const area = cols[8] || "";
-    const note = cols[9] || "";
-    result.push({ no,type,name,addr1,addr2,addr3,lat,lng,area,note });
+    const area     = cols[0]  || "";
+    const rowNo    = cols[1]  || "";
+
+    const paper1   = cols[2]  || "";
+    const count1   = normalizeCount(cols[3]);
+
+    const paper2   = cols[4]  || "";
+    const count2   = normalizeCount(cols[5]);
+
+    const paper3   = cols[6]  || "";
+    const count3   = normalizeCount(cols[7]);
+
+    const note     = cols[8]  || "";
+    const name     = cols[9]  || "";
+    const addr1    = cols[10] || "";
+    const addr2raw = cols[11] || "";
+    const readerNo = cols[12] || "";
+
+    if(!name && !addr1) return;
+
+    const addr2 = addr2raw && addr2raw !== "　" ? addr2raw : "";
+    const addr3 = "";
+    const no = rowNo || readerNo;
+
+    const type = buildPaperTypeString([
+      { paper: paper1, count: count1 },
+      { paper: paper2, count: count2 },
+      { paper: paper3, count: count3 }
+    ]);
+
+    let lat = null, lng = null;
+    if(cols.length >= 15){
+      const latNum = Number((cols[13] || "").replace(/,/g,""));
+      const lngNum = Number((cols[14] || "").replace(/,/g,""));
+      if(!Number.isNaN(latNum) && !Number.isNaN(lngNum)){
+        lat = latNum;
+        lng = lngNum;
+      }
+    }
+
+    result.push({
+      no, type, name, addr1, addr2, addr3, lat, lng, area, note,
+      paper1, count1, paper2, count2, paper3, count3, readerNo
+    });
   });
 
   return result;
@@ -337,8 +393,8 @@ function initFilters(){
   });
 
   typeFilter.innerHTML = `
-    <option value="">朝刊</option>
-    <option value="morning"></option>
+    <option value="">（新聞種：すべて）</option>
+    <option value="morning">朝刊</option>
     <option value="evening">夕刊</option>
   `;
 }
