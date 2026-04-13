@@ -1,9 +1,9 @@
 <!doctype html>
 <html lang="ja">
 <head>
-<meta charset="utf-8">
+<meta charset="shift_jis">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>区域 × 新聞種 選択（順路帳起動）</title>
+<title>��� �~ �V���� �I���i���H���N���j</title>
 <style>
   :root { --top-bar-height: 70px; }
   body { margin:0; font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#f4f4f8; color:#222; }
@@ -58,7 +58,7 @@
     #main{ height:auto; min-height:calc(100vh - 70px); }
   }
 
-  /* ===== 表紙（3秒） ===== */
+  /* ===== �\���i3�b�j ===== */
   #coverSplash{
     position: fixed; inset:0; z-index:3000;
     display:flex; align-items:center; justify-content:center;
@@ -79,13 +79,13 @@
   .cover-title{ font-size:28px; font-weight:900; letter-spacing:.6px; }
   .cover-sub{ margin-top:6px; font-size:13px; opacity:.85; letter-spacing:.2px; }
 
-  /* ===== select を“ボタン見た目”にする ===== */
+  /* ===== select ���g�{�^�������ځh�ɂ��� ===== */
 .selectWrap{
   position: relative;
   display: inline-block;
 }
 
-/* 本物のselect：透明で上に置く（これが実際にタップされる） */
+/* �{����select�F�����ŏ�ɒu���i���ꂪ���ۂɃ^�b�v�����j */
 .selectWrap select{
   position:absolute;
   inset:0;
@@ -95,15 +95,15 @@
   cursor:pointer;
 }
 
-/* 見た目だけのボタン */
+/* �����ڂ����̃{�^�� */
 .fakeBtn{
   display:flex;
   align-items:center;
   justify-content:space-between;
   gap:10px;
 
-  height:34px;               /* ★ボタン高さ統一 */
-  min-width:190px;           /* ★幅統一（好みで） */
+  height:34px;               /* ���{�^���������� */
+  min-width:190px;           /* ��������i�D�݂Łj */
   padding:0 12px;
   border-radius:10px;
 
@@ -114,19 +114,19 @@
   font-size:12px;
   letter-spacing:.2px;
 
-  pointer-events:none;       /* ★押せない（selectが押される） */
+  pointer-events:none;       /* �������Ȃ��iselect���������j */
 }
 
 .fakeBtn .chev{ opacity:.85; font-size:11px; }
 
-/* top-bar 既存のボタンCSSが強いので上書き */
+/* top-bar �����̃{�^��CSS�������̂ŏ㏑�� */
 #top-bar .fakeBtn{
   background: rgba(255,255,255,.10) !important;
   color:#fff !important;
   border:1px solid rgba(255,255,255,.35) !important;
 }
 
-/* モバイル向け */
+/* ���o�C������ */
 @media (max-width: 600px){
   .fakeBtn{ min-width:160px; }
 }
@@ -135,62 +135,62 @@
 </head>
 <body>
 
-<!-- 表紙（毎回3秒） -->
+<!-- �\���i����3�b�j -->
 <div id="coverSplash" aria-hidden="true">
   <div class="cover-inner">
     <img src="./earth7.jpg" alt="Corporate Logo" class="cover-logo">
-    <div class="cover-title">Web順路帳</div>
-    <div class="cover-sub">ワイエス メディア</div>
+    <div class="cover-title">Web���H��</div>
+    <div class="cover-sub">���C�G�X ���f�B�A</div>
   </div>
 </div>
 
 <div id="top-bar">
   <div id="top-bar-left">
-    <button id="reloadGitHub">CSV再読込</button>
-    <label for="csvFile">ローカルCSV</label>
+    <button id="reloadGitHub">CSV�ēǍ�</button>
+    <label for="csvFile">���[�J��CSV</label>
     <input id="csvFile" type="file" accept=".csv">
   </div>
 
   <div id="top-bar-center">
-    <span>区域:</span>
+    <span>���:</span>
 <div class="selectWrap">
   <select id="areaFilter">
-    <option value="">すべて</option>
+    <option value="">���ׂ�</option>
   </select>
   <button type="button" class="fakeBtn" aria-hidden="true">
-    <span id="areaLabel">（区域：すべて）</span>
-    <span class="chev">▼</span>
+    <span id="areaLabel">�i���F���ׂāj</span>
+    <span class="chev">��</span>
   </button>
 </div>
 
-<span>朝・夕刊:</span>
+<span>���E�[��:</span>
 <div class="selectWrap">
   <select id="typeFilter">
-    <option value="">すべて</option>
+    <option value="">���ׂ�</option>
   </select>
   <button type="button" class="fakeBtn" aria-hidden="true">
-    <span id="typeLabel">（指定なし）</span>
-    <span class="chev">▼</span>
+    <span id="typeLabel">�i�w��Ȃ��j</span>
+    <span class="chev">��</span>
   </button>
 </div>
 
 
-    <button id="startBtn">順路帳開く</button>
+    <button id="startBtn">���H���J��</button>
   </div>
 
   <div id="top-bar-right">
-    <div id="status">CSV未読み込み</div>
+    <div id="status">CSV���ǂݍ���</div>
   </div>
 </div>
 
 <div id="main">
-  <div id="summary">件数: 0件</div>
+  <div id="summary">����: 0��</div>
   <div id="list"></div>
 </div>
 
 <script>
-/* ===== CSVの場所：Vercelに置いたCSVを読む（おすすめ） ===== */
-const CSV_URL = "https://raw.githubusercontent.com/tookamura9648-ai/regular_route/main/data/住所録.csv";
+/* ===== CSV�̏ꏊ�FVercel�ɒu����CSV��ǂށi�������߁j ===== */
+const CSV_URL = "https://raw.githubusercontent.com/tookamura9648-ai/regular_route/main/data/�Z���^.csv";
 
 let entries = [];
 let filteredEntries = [];
@@ -207,14 +207,14 @@ const areaLabel = document.getElementById("areaLabel");
 const typeLabel = document.getElementById("typeLabel");
 
 function updateSelectLabels(){
-  const areaText = areaFilter.options[areaFilter.selectedIndex]?.textContent || "すべて";
-  const typeText = typeFilter.options[typeFilter.selectedIndex]?.textContent || "指定なし";
+  const areaText = areaFilter.options[areaFilter.selectedIndex]?.textContent || "���ׂ�";
+  const typeText = typeFilter.options[typeFilter.selectedIndex]?.textContent || "�w��Ȃ�";
   areaLabel.textContent = areaText;
   typeLabel.textContent = typeText;
 }
 
 
-/* ===== 表紙：3秒でフェード→DOM削除 ===== */
+/* ===== �\���F3�b�Ńt�F�[�h��DOM�폜 ===== */
 window.addEventListener("load", ()=>{
   const cover = document.getElementById("coverSplash");
   const SHOW_MS = 3000;
@@ -224,9 +224,9 @@ window.addEventListener("load", ()=>{
   }, SHOW_MS);
 });
 
-/* ===== CSV読み込み ===== */
+/* ===== CSV�ǂݍ��� ===== */
 async function loadCsv(){
-  statusEl.textContent = "CSV読み込み中…";
+  statusEl.textContent = "CSV�ǂݍ��ݒ��c";
   try{
     const res = await fetch(CSV_URL, { cache:"no-cache" });
     if(!res.ok) throw new Error("HTTP " + res.status);
@@ -241,13 +241,13 @@ async function loadCsv(){
 
     const parsed = parseCsvToEntries(text);
     entries = parsed;
-    statusEl.textContent = `読み込み完了（${entries.length}件）`;
+    statusEl.textContent = `�ǂݍ��݊����i${entries.length}���j`;
     initFilters();
     updateSelectLabels();
     applyFilterAndRender();
   }catch(e){
     console.error(e);
-    statusEl.textContent = "CSV読み込みに失敗しました。パスや公開設定を確認してください。";
+    statusEl.textContent = "CSV�ǂݍ��݂Ɏ��s���܂����B�p�X����J�ݒ���m�F���Ă��������B";
     entries = [];
     initFilters();
     updateSelectLabels();
@@ -257,7 +257,7 @@ async function loadCsv(){
 
 reloadBtn.addEventListener("click", loadCsv);
 
-/* ローカルCSV */
+/* ���[�J��CSV */
 fileInput.addEventListener("change",(e)=>{
   const file = e.target.files[0];
   if(!file) return;
@@ -265,16 +265,16 @@ fileInput.addEventListener("change",(e)=>{
   reader.onload = (ev)=>{
     const text = ev.target.result;
     const parsed = parseCsvToEntries(text);
-    if(parsed.length === 0){ alert("有効なデータがありませんでした。"); return; }
+    if(parsed.length === 0){ alert("�L���ȃf�[�^������܂���ł����B"); return; }
     entries = parsed;
-    statusEl.textContent = `ローカルCSVを読み込みました（${entries.length}件）`;
+    statusEl.textContent = `���[�J��CSV��ǂݍ��݂܂����i${entries.length}���j`;
     initFilters();
     applyFilterAndRender();
   };
   reader.readAsText(file, "Shift_JIS");
 });
 
-/* CSVパーサ */
+/* CSV�p�[�T */
 function parseCSV(text){
   const rows=[]; let row=[]; let field=""; let inQuotes=false;
   for(let i=0;i<text.length;i++){
@@ -306,13 +306,13 @@ function normalizeCount(v){
 function buildPaperTypeString(pairs){
   return pairs
     .filter(x => x.paper)
-    .map(({paper, count}) => count > 1 ? `${paper}×${count}` : paper)
+    .map(({paper, count}) => count > 1 ? `${paper}�~${count}` : paper)
     .join(" / ");
 }
 
 /**
- * 新CSV:
- * 区域,番号,種別1,部数1,種別2,部数2,種別3,部数3,特記事項,名前,住所1,住所2,読者番号,[緯度,経度,...]
+ * �VCSV:
+ * ���,�ԍ�,���1,����1,���2,����2,���3,����3,���L����,���O,�Z��1,�Z��2,�ǎҔԍ�,[�ܓx,�o�x,...]
  */
 function parseCsvToEntries(csvText){
   const rows = parseCSV(csvText);
@@ -326,7 +326,7 @@ function parseCsvToEntries(csvText){
     const joined = cols.join("");
     if(
       idx === 0 &&
-      /区域|番号|種別1|種別2|種別3|部数|特記事項|名前|住所1|住所2|読者番号|緯度|経度|captured_at|capture_source/i.test(joined)
+      /���|�ԍ�|���1|���2|���3|����|���L����|���O|�Z��1|�Z��2|�ǎҔԍ�|�ܓx|�o�x|captured_at|capture_source/i.test(joined)
     ){
       return;
     }
@@ -351,7 +351,7 @@ function parseCsvToEntries(csvText){
 
     if(!name && !addr1) return;
 
-    const addr2 = addr2raw && addr2raw !== "　" ? addr2raw : "";
+    const addr2 = addr2raw && addr2raw !== "�@" ? addr2raw : "";
     const addr3 = "";
     const no = rowNo || readerNo;
 
@@ -380,12 +380,12 @@ function parseCsvToEntries(csvText){
   return result;
 }
 
-/* フィルタ初期化 */
+/* �t�B���^������ */
 function initFilters(){
   const areas = new Set();
   entries.forEach(e => { if(e.area) areas.add(e.area); });
 
-  areaFilter.innerHTML = '<option value="">（区域：すべて）</option>';
+  areaFilter.innerHTML = '<option value="">�i���F���ׂāj</option>';
   Array.from(areas).sort().forEach(a=>{
     const opt = document.createElement("option");
     opt.value = a; opt.textContent = a;
@@ -393,9 +393,9 @@ function initFilters(){
   });
 
   typeFilter.innerHTML = `
-    <option value="">（新聞種：すべて）</option>
-    <option value="morning">朝刊</option>
-    <option value="evening">夕刊</option>
+    <option value="">�i�V����F���ׂāj</option>
+    <option value="morning">����</option>
+    <option value="evening">�[��</option>
   `;
 }
 initFilters();
@@ -403,7 +403,7 @@ updateSelectLabels();
 applyFilterAndRender();
 
 
-function hasEvening(typeStr){ return /よセ|日経セ|日経代/.test(typeStr || ""); }
+function hasEvening(typeStr){ return /��Z|���o�Z|���o��/.test(typeStr || ""); }
 function matchTypeFilter(typeVal, entryType){
   if(!typeVal) return true;
   const evening = hasEvening(entryType);
@@ -437,10 +437,10 @@ function applyFilterAndRender(){
 
 function renderList(){
   listEl.innerHTML = "";
-  summaryEl.textContent = `件数: ${filteredEntries.length}件（全体: ${entries.length}件）`;
+  summaryEl.textContent = `����: ${filteredEntries.length}���i�S��: ${entries.length}���j`;
 
   if(filteredEntries.length===0){
-    listEl.textContent = "該当するデータがありません。";
+    listEl.textContent = "�Y������f�[�^������܂���B";
     return;
   }
 
@@ -469,7 +469,7 @@ function renderList(){
     if(e.note){
       const note=document.createElement("div");
       note.className="note";
-      note.textContent = `備考: ${e.note}`;
+      note.textContent = `���l: ${e.note}`;
       row.appendChild(note);
     }
 
@@ -481,7 +481,7 @@ function escapeHtml(s){
   return (s||"").replace(/[&<>"']/g, m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[m]));
 }
 
-/* 順路帳へ */
+/* ���H���� */
 startBtn.addEventListener("click", ()=>{
   const areaVal = areaFilter.value || "";
   const typeVal = typeFilter.value || "";
