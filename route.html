@@ -231,28 +231,6 @@
   }
   #splashSkip{ background:#fff; color:#222; opacity:.9; }
   #splashRetry{ background:#111; color:#fff; border:1px solid rgba(255,255,255,.25); }
-  /* ===== 登録済み表示 ===== */
-.card{
-  position: relative;
-}
-
-.card.captured{
-  opacity: 0.5;
-  filter: grayscale(100%);
-  border: 2px solid #999;
-}
-
-.card.captured::after{
-  content: "✔ 登録済み";
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  background: rgba(0,0,0,0.7);
-  color: #fff;
-  font-size: 10px;
-  padding: 2px 6px;
-  border-radius: 6px;
-}
 </style>
 </head>
 <body>
@@ -302,6 +280,7 @@
   <button id="btnRecStop" type="button" disabled>記録停止</button>
   <button id="btnRecSave" type="button" disabled>GeoJSON保存</button>
   <button id="btnEduSave" type="button" disabled>教育CSV保存</button>
+  <button id="btnBackIndex" type="button">区域選択へ戻る</button>
   <button id="btnRecClear" type="button" disabled>クリア</button>
   <span id="recordModeBadge" class="mode-badge">通常モード</span>
   <span id="recordStatus">ルート記録停止中</span>
@@ -347,6 +326,7 @@ const btnRecPause = document.getElementById("btnRecPause");
 const btnRecStop  = document.getElementById("btnRecStop");
 const btnRecSave  = document.getElementById("btnRecSave");
 const btnEduSave  = document.getElementById("btnEduSave");
+const btnBackIndex = document.getElementById("btnBackIndex");
 const btnRecClear = document.getElementById("btnRecClear");
 const recordModeBadge = document.getElementById("recordModeBadge");
 const recordStatusEl = document.getElementById("recordStatus");
@@ -462,6 +442,40 @@ function clearCapturedMarks(){
   educationCaptures.forEach((_, key) => markCapturedCard(key));
 }
 
+
+function getVisibleEducationCards(){
+  return Array.from(container.querySelectorAll(".card"));
+}
+
+function getRemainingEducationCardsCount(){
+  return getVisibleEducationCards().filter(card => !card.classList.contains("captured")).length;
+}
+
+function buildIndexReturnUrl(){
+  const params = new URLSearchParams(location.search);
+  const type = params.get("type") || "";
+  const back = new URL("index.html", location.href);
+  if (type) back.searchParams.set("type", type);
+  return back.toString();
+}
+
+function returnToIndexSelection(){
+  location.href = buildIndexReturnUrl();
+}
+
+function handleEducationCompletionIfNeeded(){
+  if (appMode !== "education") return;
+  const visibleCards = getVisibleEducationCards();
+  if (visibleCards.length === 0) return;
+  const remaining = getRemainingEducationCardsCount();
+  if (remaining !== 0) return;
+
+  setRecordStatus("この区域の登録が完了しました。区域選択へ戻ります。");
+  setTimeout(() => {
+    returnToIndexSelection();
+  }, 900);
+}
+
 function captureEducationDestination(card){
   if (userLat == null || userLng == null){
     alert('現在地がまだ取得できていません。少し待ってから再度タップしてください。');
@@ -493,8 +507,14 @@ function captureEducationDestination(card){
   }
   markCapturedCard(payload.key);
   updateEducationSaveButton();
-  setRecordStatus(`保存: ${payload.no} ${payload.name}`.trim() || '目的地を保存しました');
+  const remaining = getRemainingEducationCardsCount();
+  setRecordStatus(
+    remaining > 0
+      ? (`保存: ${payload.no} ${payload.name} / 残り${remaining}件`.trim())
+      : "この区域の登録が完了しました。区域選択へ戻ります。"
+  );
   if (navigator.vibrate) navigator.vibrate(80);
+  handleEducationCompletionIfNeeded();
 }
 
 function saveEducationCsv(){
@@ -1535,6 +1555,7 @@ btnRecPause.addEventListener("click", pauseRouteRecording);
 btnRecStop.addEventListener("click", stopRouteRecording);
 btnRecSave.addEventListener("click", saveRecordedGeoJSON);
 btnEduSave.addEventListener("click", saveEducationCsv);
+btnBackIndex.addEventListener("click", returnToIndexSelection);
 btnRecClear.addEventListener("click", clearRouteRecording);
 modeSelect.addEventListener("change", () => {
   appMode = modeSelect.value;
