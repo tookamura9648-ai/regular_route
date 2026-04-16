@@ -312,6 +312,8 @@
 // ====== GitHub上のCSV URL ======
 const GITHUB_CSV_URL =
   "https://raw.githubusercontent.com/tookamura9648-ai/regular_route/main/data/%E4%BD%8F%E6%89%80%E9%8C%B2.csv";
+const ROUTE_GEOJSON_URL =
+  "https://raw.githubusercontent.com/tookamura9648-ai/regular_route/main/data/route.geojson";
   
 // { no, type, name, addr1, addr2, addr3, lat, lng, area, note }
 let entries = [];
@@ -376,6 +378,13 @@ let recLastPoint = null;
 let recRecording = false;
 let recPaused = false;
 let recordedRouteLayer = null;
+let referenceRouteLayer = null;
+let referenceRouteBounds = null;
+let referenceRouteLoaded = false;
+let referenceRouteLoadError = null;
+let destinationLayerGroup = null;
+let destinationBounds = null;
+let activeDestinationKey = "";
 let appMode = "normal";
 let educationCaptures = new Map();
 
@@ -406,13 +415,14 @@ function updateModeUi(){
   recordModeBadge.textContent = isEdu ? "教育モード" : "通常モード";
   statusEl.textContent = isEdu
     ? "教育モード：目的地に到着したらカードをタップして現在地を保存します"
-    : "通常モード：カードタップで地図とHUDを表示します";
+    : "通常モード：カードタップで地図とHUDを表示します（先輩ルートも表示）";
   hudToggle.disabled = isEdu;
   prevTurnBtn.disabled = isEdu;
   nextTurnBtn.disabled = isEdu;
   if (isEdu){
     mapOverlay.style.display = "none";
   }
+  updateReferenceRouteVisibility();
 }
 
 function updateEducationSaveButton(){
@@ -578,7 +588,7 @@ function saveEducationCsv(){
 
   const d = new Date();
   const fileName = `education_destinations_${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}.csv`;
-  downloadTextFile(fileName, lines.join('\r\n'), 'text/csv;charset=utf-8');
+  downloadTextFile(fileName, lines.join('\r\n'), 'text/csv;charset=utf-8', true);
   setRecordStatus('教育CSVを保存しました。');
 }
 
@@ -615,6 +625,129 @@ function refreshRecordedRouteLayer(){
       opacity: .85,
       color: "#00a6b2"
     }).addTo(map);
+  }
+}
+
+function getVisibleEntries(){
+  return filterByUrlParams(entries);
+}
+
+function makeDestinationLabel(item){
+  return (`${item.no || ""} ${item.name || ""}`.trim() || [item.addr1, item.addr2, item.addr3].filter(Boolean).join(" ") || "目的地").slice(0, 40);
+}
+
+function buildDestinationMarkers(force=false){
+  if (!map) return;
+  if (appMode !== "normal") {
+    if (destinationLayerGroup && map.hasLayer(destinationLayerGroup)) map.removeLayer(destinationLayerGroup);
+    return;
+  }
+
+  if (destinationLayerGroup && map.hasLayer(destinationLayerGroup)) {
+    map.removeLayer(destinationLayerGroup);
+  }
+
+  destinationLayerGroup = L.layerGroup();
+  destinationBounds = null;
+
+  const latlngs = [];
+  getVisibleEntries().forEach(item => {
+    const lat = Number(item.lat);
+    const lng = Number(item.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+    const key = entryKey(item);
+    const isActive = activeDestinationKey && key === activeDestinationKey;
+    const marker = L.circleMarker([lat, lng], {
+      radius: isActive ? 8 : 6,
+      weight: 2,
+      color: isActive ? '#c62828' : '#166534',
+      fillColor: isActive ? '#ef4444' : '#22c55e',
+      fillOpacity: isActive ? 0.95 : 0.8
+    });
+
+    marker.bindTooltip(makeDestinationLabel(item), { direction: 'top', offset: [0, -6] });
+    marker.on('click', () => {
+      if (appMode !== 'normal') return;
+      openMapAndRoute(makeDestinationLabel(item), lat, lng, key);
+    });
+
+    destinationLayerGroup.addLayer(marker);
+    latlngs.push([lat, lng]);
+  });
+
+  if (destinationLayerGroup.getLayers().length > 0) {
+    destinationLayerGroup.addTo(map);
+    destinationBounds = L.latLngBounds(latlngs);
+  }
+}
+
+function updateDestinationMarkerVisibility(){
+  if (!map) return;
+  if (appMode === 'normal') {
+    buildDestinationMarkers(true);
+  } else if (destinationLayerGroup && map.hasLayer(destinationLayerGroup)) {
+    map.removeLayer(destinationLayerGroup);
+  }
+}
+
+async function loadReferenceRoute(force=false){
+  if (!map || appMode !== "normal") return;
+  if (referenceRouteLoaded && !force){
+    if (referenceRouteLayer && !map.hasLayer(referenceRouteLayer)) referenceRouteLayer.addTo(map);
+    return;
+  }
+  if (!ROUTE_GEOJSON_URL) return;
+
+  try{
+    const res = await fetch(ROUTE_GEOJSON_URL, { cache: "no-cache" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const geo = await res.json();
+
+    if (referenceRouteLayer && map){
+      map.removeLayer(referenceRouteLayer);
+      referenceRouteLayer = null;
+    }
+
+    referenceRouteLayer = L.geoJSON(geo, {
+      style: {
+        color: "#ff7a00",
+        weight: 4,
+        opacity: 0.55
+      }
+    });
+
+    if (map && appMode === "normal"){
+      referenceRouteLayer.addTo(map);
+    }
+
+    referenceRouteBounds = referenceRouteLayer.getBounds?.() || null;
+    referenceRouteLoaded = true;
+    referenceRouteLoadError = null;
+  }catch(err){
+    console.error("GeoJSON読み込み失敗:", err);
+    referenceRouteLoaded = false;
+    referenceRouteLoadError = err;
+  }
+}
+
+function updateReferenceRouteVisibility(){
+  if (!map) return;
+  if (appMode === "normal"){
+    if (referenceRouteLayer && !map.hasLayer(referenceRouteLayer)){
+      referenceRouteLayer.addTo(map);
+    }
+    if (!referenceRouteLoaded){
+      loadReferenceRoute();
+    }
+    updateDestinationMarkerVisibility();
+  }else{
+    if (referenceRouteLayer && map.hasLayer(referenceRouteLayer)){
+      map.removeLayer(referenceRouteLayer);
+    }
+    if (destinationLayerGroup && map.hasLayer(destinationLayerGroup)){
+      map.removeLayer(destinationLayerGroup);
+    }
   }
 }
 
@@ -701,8 +834,9 @@ function clearRouteRecording(){
   updateRecordStats();
 }
 
-function downloadTextFile(name, text, type="application/octet-stream"){
-  const blob = new Blob([text], { type });
+function downloadTextFile(name, text, type="application/octet-stream", withBom=false){
+  const parts = withBom ? [new Uint8Array([0xEF, 0xBB, 0xBF]), text] : [text];
+  const blob = new Blob(parts, { type });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -793,13 +927,50 @@ function filterByUrlParams(list){
   });
 }
 
+// ====== 文字コード判定 / CSVデコード ======
+function looksReasonableCsv(text){
+  if (!text) return false;
+  const head = text.slice(0, 400);
+  if (/�/.test(head)) return false;
+  return /区域|番号|種別|名前|住所|読者番号|購読者番号|新聞種類|地名|番地|建物|緯度|経度/.test(head);
+}
+
+function decodeCsvBuffer(buf){
+  const bytes = new Uint8Array(buf);
+
+  if (bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF){
+    return new TextDecoder('utf-8').decode(bytes);
+  }
+
+  const utf8Text = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+  if (looksReasonableCsv(utf8Text)) return utf8Text;
+
+  try {
+    const sjisText = new TextDecoder('shift_jis', { fatal: false }).decode(bytes);
+    if (looksReasonableCsv(sjisText)) return sjisText;
+    return sjisText;
+  } catch (_e) {
+    return utf8Text;
+  }
+}
+
+async function readFileAsArrayBuffer(file){
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error || new Error('ファイル読込に失敗しました'));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
 // ====== GitHub/ローカルCSV ======
 async function loadCsvFromGitHub(){
   statusEl.textContent = "GitHub からCSVを読み込み中…";
   try{
     const res = await fetch(GITHUB_CSV_URL, { cache:"no-cache" });
     if (!res.ok) throw new Error("HTTP " + res.status);
-    const text = await res.text();
+    const buf = await res.arrayBuffer();
+    const text = decodeCsvBuffer(buf);
     const parsed = parseCsvToEntries(text);
     entries = parsed;
     statusEl.textContent = `GitHub から読み込み完了（${entries.length}件）`;
@@ -812,19 +983,21 @@ async function loadCsvFromGitHub(){
 }
 reloadBtn.addEventListener("click", loadCsvFromGitHub);
 
-fileInput.addEventListener("change",(e)=>{
+fileInput.addEventListener("change", async (e)=>{
   const file = e.target.files[0];
   if (!file) return;
-  const reader = new FileReader();
-  reader.onload = (ev)=>{
-    const text = ev.target.result;
+  try {
+    const buf = await readFileAsArrayBuffer(file);
+    const text = decodeCsvBuffer(buf);
     const parsed = parseCsvToEntries(text);
     if (parsed.length === 0) { alert("有効なデータがありません。CSVを確認してください。"); return; }
     entries = parsed;
     statusEl.textContent = `ローカルCSVを読み込みました（${entries.length}件）`;
     renderCards();
-  };
-  reader.readAsText(file, "Shift_JIS");
+  } catch (err) {
+    console.error(err);
+    alert('CSV読込に失敗しました。');
+  }
 });
 
 function parseCSV(text){
@@ -1047,6 +1220,8 @@ function renderCards() {
 
     container.appendChild(card);
   });
+
+  if (map) updateDestinationMarkerVisibility();
 }
 
 
@@ -1097,15 +1272,18 @@ function onCardClick(e){
     alert("この順路には緯度・経度がありません。CSVに緯度/経度を入れてください。教育モードなら到着位置を登録できます。");
     return;
   }
-  openMapAndRoute(label, lat, lng);
+  openMapAndRoute(label, lat, lng, card.dataset.key || "");
 }
 
-function openMapAndRoute(label, lat, lng){
+function openMapAndRoute(label, lat, lng, key=""){
+  activeDestinationKey = key || "";
   mapTitle.textContent = label;
   mapOverlay.style.display="block";
 
   if(!map) initMap(lat,lng);
   else map.setView([lat,lng], 17);
+
+  updateDestinationMarkerVisibility();
 
   if(!destMarker) destMarker = L.marker([lat,lng]).addTo(map);
   else destMarker.setLatLng([lat,lng]);
@@ -1123,6 +1301,7 @@ function openMapAndRoute(label, lat, lng){
 
   setTimeout(()=> map.invalidateSize(), 200);
   refreshRecordedRouteLayer();
+  updateReferenceRouteVisibility();
   routeFromHereTo({ lat, lng });
 }
 
@@ -1134,6 +1313,8 @@ function initMap(lat,lng){
   map.setView([lat,lng],17);
   startGeoWatch(); // 地図表示時にも確実に開始
   refreshRecordedRouteLayer();
+  updateReferenceRouteVisibility();
+  updateDestinationMarkerVisibility();
 }
 
 function clearTurnFocus(){
@@ -1533,8 +1714,21 @@ async function routeFromHereTo(target){
 
     const latlngs = geometry.map(([lon,lat]) => [lat,lon]);
     if(routeFromHereLayer) map.removeLayer(routeFromHereLayer);
-    routeFromHereLayer = L.polyline(latlngs, { weight:2, opacity:.9 }).addTo(map);
-    map.fitBounds(routeFromHereLayer.getBounds(), { padding:[30,30] });
+    routeFromHereLayer = L.polyline(latlngs, {
+      weight: 5,
+      opacity: .95,
+      color: "#1f6bff"
+    }).addTo(map);
+
+    const routeBounds = routeFromHereLayer.getBounds();
+    let mergedBounds = routeBounds;
+    if (referenceRouteBounds && referenceRouteBounds.isValid && referenceRouteBounds.isValid()){
+      mergedBounds = mergedBounds.extend(referenceRouteBounds);
+    }
+    if (destinationBounds && destinationBounds.isValid && destinationBounds.isValid()){
+      mergedBounds = mergedBounds.extend(destinationBounds);
+    }
+    map.fitBounds(mergedBounds, { padding:[30,30] });
 
     if(maneuverList.length===0){
       hudBanner.style.display = hudOn ? "block" : "none";
