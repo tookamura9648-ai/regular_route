@@ -1266,12 +1266,24 @@ function onCardClick(e){
   const addr = [card.dataset.addr1, card.dataset.addr2, card.dataset.addr3].filter(Boolean).join(" ");
   const label = (`${no} ${name}`.trim() || addr || "地図").slice(0,40);
 
-  const lat = card.dataset.lat ? Number(card.dataset.lat) : null;
-  const lng = card.dataset.lng ? Number(card.dataset.lng) : null;
-  if(lat==null || lng==null || Number.isNaN(lat) || Number.isNaN(lng)){
-    alert("この順路には緯度・経度がありません。CSVに緯度/経度を入れてください。教育モードなら到着位置を登録できます。");
-    return;
+  let lat = card.dataset.lat ? Number(card.dataset.lat) : null;
+  let lng = card.dataset.lng ? Number(card.dataset.lng) : null;
+
+  // 緯度経度が無い・不正・0,0 のときは現在地を使う
+  if (
+    lat == null || lng == null ||
+    Number.isNaN(lat) || Number.isNaN(lng) ||
+    (lat === 0 && lng === 0)
+  ){
+    if (userLat != null && userLng != null) {
+      lat = Number(userLat);
+      lng = Number(userLng);
+    } else {
+      alert("この順路には緯度・経度がなく、現在地もまだ取得できていません。少し待ってから再度開いてください。");
+      return;
+    }
   }
+
   openMapAndRoute(label, lat, lng, card.dataset.key || "");
 }
 
